@@ -269,16 +269,6 @@ const approvingLoan = async (req, res) => {
       });
     }
 
-    // Branch lead can only approve loans from their branch
-    if (
-      req.user.role === "branch_lead" &&
-      loan.branch._id.toString() !== req.user.branch._id.toString()
-    ) {
-      return res.status(403).json({
-        status: "error",
-        message: "Access denied. You can only process loans from your branch.",
-      });
-    }
 
     // Update loan
     const updateData = {

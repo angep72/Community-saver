@@ -158,16 +158,20 @@ const createContribution = async (req, res) => {
     }
 
     // Branch lead can only add contributions for their branch members
-    if (
-      req.user.role === "branch_lead" &&
-      member.branch.toString() !== req.user.branch._id.toString()
-    ) {
-      return res.status(403).json({
-        status: "error",
-        message:
-          "Access denied. You can only add contributions for your branch members.",
-      });
-    }
+    // Branch lead can only add contributions for their branch members
+if (
+  req.user.role === "branch_lead" &&
+  (
+    (member.branch._id ? member.branch._id.toString() : member.branch.toString()) !==
+    (req.user.branch._id ? req.user.branch._id.toString() : req.user.branch.toString())
+  )
+) {
+  return res.status(403).json({
+    status: "error",
+    message:
+      "Access denied. You can only add contributions for your branch members.",
+  });
+}
 
     const contributionData = {
       ...req.body,
