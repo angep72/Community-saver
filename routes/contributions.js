@@ -24,6 +24,29 @@ const router = express.Router();
 router.use(protect);
 router.get("/net", getNetContributions);
 
+/**
+ * @swagger
+ * /contributions/net:
+ *   get:
+ *     summary: Get net available contributions
+ *     description: Returns the net available contributions (total contributions minus total approved loans).
+ *     tags: [Contributions]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Net available contributions retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 netContributions:
+ *                   type: number
+ *                   example: 10000
+ *       401:
+ *         description: Unauthorized
+ */
 
 router.get("/total", getTotalContributions);
 
