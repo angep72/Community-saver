@@ -78,6 +78,11 @@ const userSchema = new mongoose.Schema(
     lastLogin: {
       type: Date,
     },
+    status: {
+      type: String,
+      enum: ["pending", "approved", "rejected"],
+      default: "pending",
+    },
   },
   {
     timestamps: true,

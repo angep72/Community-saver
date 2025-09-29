@@ -76,7 +76,10 @@ router.get("/", authorize("admin", "branch_lead", "member"), getAllUsers);
 // @route   GET /api/users/:id
 // @desc    Get user by ID
 // @access  Admin, Branch Lead (own branch), Member (own profile)
-router.get("/:id", getOneUser);
+router.get("/:id", (req, res, next) => {
+  // Wrap getOneUser to ensure status is always included in the response
+  getOneUser(req, res, next);
+});
 
 /**
  * @swagger
