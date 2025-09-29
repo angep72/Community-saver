@@ -222,11 +222,7 @@ const editUser = async (req, res) => {
 };
 const deleteUser = async (req, res) => {
   try {
-    const user = await User.findByIdAndUpdate(
-      req.params.id,
-      { isActive: false },
-      { new: true }
-    );
+    const user = await User.findById(req.params.id);
 
     if (!user) {
       return res.status(404).json({
@@ -235,7 +231,39 @@ const deleteUser = async (req, res) => {
       });
     }
 
-    // Log the action
+    // Check if user has any loans that are not repaid (pending or approved)
+    const activeLoans = await Loan.findOne({
+      memberId: req.params.id,
+      status: { $in: ["pending", "approved"] },
+    });
+
+    if (activeLoans) {
+      return res.status(400).json({
+        status: "error",
+        message:
+          "Cannot delete user. User has active loans (pending or approved) in the system.",
+      });
+    }
+
+    // Check if user has total contributions greater than zero
+    const contributionResult = await Contribution.aggregate([
+      { $match: { memberId: user._id } },
+      { $group: { _id: null, total: { $sum: "$amount" } } },
+    ]);
+
+    const totalContributions = contributionResult[0]
+      ? contributionResult[0].total
+      : 0;
+
+    if (totalContributions > 0) {
+      return res.status(400).json({
+        status: "error",
+        message:
+          "Cannot delete user. User has contributions greater than zero.",
+      });
+    }
+
+    // Log the action before deletion
     await AuditLog.create({
       user: req.user._id,
       action: "delete_user",
@@ -246,9 +274,12 @@ const deleteUser = async (req, res) => {
       userAgent: req.get("User-Agent"),
     });
 
+    // Permanently delete the user
+    await User.findByIdAndDelete(req.params.id);
+
     res.status(200).json({
       status: "success",
-      message: "User deactivated successfully",
+      message: "User deleted successfully",
     });
   } catch (error) {
     res.status(500).json({
@@ -348,7 +379,7 @@ const getMemberShares = async (req, res) => {
       const interestEarned = share * totalInterest;
       const interestToBeEarned = share * totalInterestToBeEarned;
       return {
-        id: member._id, 
+        id: member._id,
         name: member.fullName,
         branch:
           member.branch && member.branch.name
