@@ -348,6 +348,7 @@ const getMemberShares = async (req, res) => {
       const interestEarned = share * totalInterest;
       const interestToBeEarned = share * totalInterestToBeEarned;
       return {
+        id: member._id, 
         name: member.fullName,
         branch:
           member.branch && member.branch.name
