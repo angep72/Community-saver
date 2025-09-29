@@ -159,19 +159,21 @@ const createContribution = async (req, res) => {
 
     // Branch lead can only add contributions for their branch members
     // Branch lead can only add contributions for their branch members
-if (
-  req.user.role === "branch_lead" &&
-  (
-    (member.branch._id ? member.branch._id.toString() : member.branch.toString()) !==
-    (req.user.branch._id ? req.user.branch._id.toString() : req.user.branch.toString())
-  )
-) {
-  return res.status(403).json({
-    status: "error",
-    message:
-      "Access denied. You can only add contributions for your branch members.",
-  });
-}
+    if (
+      req.user.role === "branch_lead" &&
+      (member.branch._id
+        ? member.branch._id.toString()
+        : member.branch.toString()) !==
+        (req.user.branch._id
+          ? req.user.branch._id.toString()
+          : req.user.branch.toString())
+    ) {
+      return res.status(403).json({
+        status: "error",
+        message:
+          "Access denied. You can only add contributions for your branch members.",
+      });
+    }
 
     const contributionData = {
       ...req.body,
@@ -370,22 +372,27 @@ const getTotalContributions = async (req, res) => {
 // Get the sum of all contributions minus total approved loans
 const getNetContributions = async (req, res) => {
   try {
-    // Sum all contributions
+    // Get all active user IDs
+    const activeUsers = await User.find({ isActive: true }).select("_id");
+    const activeUserIds = activeUsers.map((u) => u._id);
+
+    // Sum all contributions from active users only
     const contribResult = await Contribution.aggregate([
+      { $match: { memberId: { $in: activeUserIds } } },
       { $group: { _id: null, total: { $sum: "$amount" } } },
     ]);
     const totalContributions = contribResult[0] ? contribResult[0].total : 0;
 
-    // Sum all approved loans
+    // Sum all approved loans from active users only
     const loanResult = await Loan.aggregate([
-      { $match: { status: "approved" } },
+      { $match: { status: "approved", memberId: { $in: activeUserIds } } },
       { $group: { _id: null, total: { $sum: "$amount" } } },
     ]);
     const totalApprovedLoans = loanResult[0] ? loanResult[0].total : 0;
 
-    // Sum all interest from repaid loans
+    // Sum all interest from repaid loans from active users only
     const interestResult = await Loan.aggregate([
-      { $match: { status: "repaid" } },
+      { $match: { status: "repaid", memberId: { $in: activeUserIds } } },
       {
         $group: {
           _id: null,
@@ -397,18 +404,18 @@ const getNetContributions = async (req, res) => {
       ? interestResult[0].total
       : 0;
 
-    // Sum all collected penalties
+    // Sum all collected penalties from active users only
     const collectedPenaltyResult = await Penalty.aggregate([
-      { $match: { status: "collected" } },
+      { $match: { status: "collected", member: { $in: activeUserIds } } },
       { $group: { _id: null, total: { $sum: "$amount" } } },
     ]);
     const totalCollectedPenalties = collectedPenaltyResult[0]
       ? collectedPenaltyResult[0].total
       : 0;
 
-    // Sum all paid penalties
+    // Sum all paid penalties from active users only
     const paidPenaltyResult = await Penalty.aggregate([
-      { $match: { status: "paid" } },
+      { $match: { status: "paid", member: { $in: activeUserIds } } },
       { $group: { _id: null, total: { $sum: "$amount" } } },
     ]);
     const totalPaidPenalties = paidPenaltyResult[0]
@@ -423,9 +430,9 @@ const getNetContributions = async (req, res) => {
       totalCollectedPenalties +
       totalPaidPenalties;
 
-    // Sum all interest from approved loans
+    // Sum all interest from approved loans from active users only
     const approvedInterestResult = await Loan.aggregate([
-      { $match: { status: "approved" } },
+      { $match: { status: "approved", memberId: { $in: activeUserIds } } },
       {
         $group: {
           _id: null,
@@ -440,9 +447,9 @@ const getNetContributions = async (req, res) => {
     // Future balance: netAvailable + interest from approved loans
     const futureBalance = netAvailable + totalInterestFromApprovedLoans;
 
-    // Total amount to be repaid for approved loans
+    // Total amount to be repaid for approved loans from active users only
     const approvedLoansTotalAmountResult = await Loan.aggregate([
-      { $match: { status: "approved" } },
+      { $match: { status: "approved", memberId: { $in: activeUserIds } } },
       { $group: { _id: null, total: { $sum: "$totalAmount" } } },
     ]);
     const totalToBeRepaidOnApprovedLoans = approvedLoansTotalAmountResult[0]
