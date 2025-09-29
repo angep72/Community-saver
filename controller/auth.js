@@ -24,7 +24,7 @@ const registerController = async (req, res) => {
       });
     }
 
-    // Create user
+    // Create user with status defaulting to 'pending'
     const user = await User.create({
       firstName,
       lastName,
@@ -32,6 +32,7 @@ const registerController = async (req, res) => {
       password,
       role: role || "member",
       branch,
+      status: "pending", 
     });
 
     // Generate token
@@ -59,6 +60,7 @@ const registerController = async (req, res) => {
           lastName: user.lastName,
           email: user.email,
           role: user.role,
+          status: user.status,
         },
       },
     });
@@ -92,6 +94,15 @@ const loginController = async (req, res) => {
       return res.status(401).json({
         status: "error",
         message: "Account is deactivated. Contact administrator.",
+      });
+    }
+
+    // If not admin, check if user is approved
+    if (user.role !== "admin" && user.status !== "approved") {
+      return res.status(403).json({
+        status: "error",
+        message: `Your account status is '${user.status}'. Please contact the admin for approval.`,
+        userStatus: user.status,
       });
     }
 
@@ -138,6 +149,7 @@ const loginController = async (req, res) => {
           totalLoans: user.totalLoans,
           totalPenalties: user.totalPenalties,
           lastLogin: user.lastLogin,
+          status: user.status,
         },
       },
     });
