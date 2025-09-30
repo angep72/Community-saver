@@ -97,22 +97,21 @@ const loginController = async (req, res) => {
       });
     }
 
-    // If not admin, check if user is approved
-    if (user.role !== "admin" && user.status !== "approved") {
-      return res.status(403).json({
-        status: "error",
-        message: `Your account status is '${user.status}'. Please contact the admin for approval.`,
-        userStatus: user.status,
-      });
-    }
-
-    // Validate password
     const isMatch = await user.comparePassword(password);
 
     if (!isMatch) {
       return res.status(401).json({
         status: "error",
         message: "Invalid credentials",
+      });
+    }
+
+    // If not admin, check if user is approved
+    if (user.role !== "admin" && user.status !== "approved") {
+      return res.status(403).json({
+        status: "error",
+        message: `Your account status is '${user.status}'. Please contact the admin for approval.`,
+        userStatus: user.status,
       });
     }
 
