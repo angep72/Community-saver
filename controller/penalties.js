@@ -189,7 +189,7 @@ const createPenality = async (req, res) => {
     await penalty.populate("assignedBy", "firstName lastName");
     await penalty.populate("branch", "name code");
 
-    // Log the action
+    // Log the actions
     await AuditLog.create({
       user: req.user._id,
       action: "assign_penalty",
