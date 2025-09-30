@@ -76,13 +76,18 @@ const registerController = async (req, res) => {
 const loginController = async (req, res) => {
   try {
     const { email, password } = req.body;
+    
+    console.log('Login attempt:', { email, password: password ? '[PROVIDED]' : '[MISSING]' });
 
     // Find user and include password
     const user = await User.findOne({ email })
       .select("+password")
       .populate("branch");
 
+    console.log('User found:', user ? { id: user._id, email: user.email, isActive: user.isActive, status: user.status } : 'NOT FOUND');
+
     if (!user) {
+      console.log('Login failed: User not found');
       return res.status(401).json({
         status: "error",
         message: "Invalid credentials",
@@ -91,6 +96,7 @@ const loginController = async (req, res) => {
 
     // Check if user is active
     if (!user.isActive) {
+      console.log('Login failed: User not active');
       return res.status(401).json({
         status: "error",
         message: "Account is deactivated. Contact administrator.",
@@ -108,6 +114,7 @@ const loginController = async (req, res) => {
 
     // If not admin, check if user is approved
     if (user.role !== "admin" && user.status !== "approved") {
+      console.log('Login failed: User not approved, status:', user.status);
       return res.status(403).json({
         status: "error",
         message: `Your account status is '${user.status}'. Please contact the admin for approval.`,
@@ -131,6 +138,8 @@ const loginController = async (req, res) => {
       userAgent: req.get("User-Agent"),
     });
 
+    console.log('Login successful for user:', user.email);
+
     res.status(200).json({
       status: "success",
       message: "Login successful",
@@ -153,6 +162,7 @@ const loginController = async (req, res) => {
       },
     });
   } catch (error) {
+    console.error('Login error:', error);
     res.status(500).json({
       status: "error",
       message: "Login failed",
