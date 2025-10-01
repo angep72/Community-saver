@@ -103,6 +103,15 @@ const loginController = async (req, res) => {
       });
     }
 
+    const isMatch = await user.comparePassword(password);
+
+    if (!isMatch) {
+      return res.status(401).json({
+        status: "error",
+        message: "Invalid credentials",
+      });
+    }
+
     // If not admin, check if user is approved
     if (user.role !== "admin" && user.status !== "approved") {
       console.log('Login failed: User not approved, status:', user.status);
@@ -110,18 +119,6 @@ const loginController = async (req, res) => {
         status: "error",
         message: `Your account status is '${user.status}'. Please contact the admin for approval.`,
         userStatus: user.status,
-      });
-    }
-
-    // Validate password
-    const isMatch = await user.comparePassword(password);
-    console.log('Password match:', isMatch);
-
-    if (!isMatch) {
-      console.log('Login failed: Password mismatch');
-      return res.status(401).json({
-        status: "error",
-        message: "Invalid credentials",
       });
     }
 
