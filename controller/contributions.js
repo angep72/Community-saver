@@ -2,7 +2,7 @@ const Contribution = require("../models/Contribution");
 const User = require("../models/User");
 const AuditLog = require("../models/AuditLog");
 const Loan = require("../models/Loan");
-const Penalty = require("../models/Penalty"); // <-- Include Penalty model
+const Penalty = require("../models/Penalty"); 
 
 const getAllContribution = async (req, res) => {
   try {
@@ -159,7 +159,6 @@ const createContribution = async (req, res) => {
 
     // Branch lead can only add contributions for their branch members
     // Branch lead can only add contributions for their branch members
-
 
     const contributionData = {
       ...req.body,
@@ -403,6 +402,15 @@ const getNetContributions = async (req, res) => {
       ? paidPenaltyResult[0].total
       : 0;
 
+    // Sum all pending penalties
+    const pendingPenaltyResult = await Penalty.aggregate([
+      { $match: { status: "pending" } },
+      { $group: { _id: null, total: { $sum: "$amount" } } },
+    ]);
+    const totalPendingPenalties = pendingPenaltyResult[0]
+      ? pendingPenaltyResult[0].total
+      : 0;
+
     // Net available: contributions - approved loans + interest from repaid loans + collected penalties + paid penalties
     const netAvailable =
       totalContributions -
@@ -410,6 +418,8 @@ const getNetContributions = async (req, res) => {
       totalInterestFromRepaidLoans +
       totalCollectedPenalties +
       totalPaidPenalties;
+
+    
 
     // Sum all interest from approved loans
     const approvedInterestResult = await Loan.aggregate([
@@ -426,7 +436,8 @@ const getNetContributions = async (req, res) => {
       : 0;
 
     // Future balance: netAvailable + interest from approved loans
-    const futureBalance = netAvailable + totalInterestFromApprovedLoans;
+    const futureBalance =
+      netAvailable + totalInterestFromApprovedLoans + totalPendingPenalties;
 
     // Total amount to be repaid for approved loans
     const approvedLoansTotalAmountResult = await Loan.aggregate([
@@ -437,8 +448,9 @@ const getNetContributions = async (req, res) => {
       ? approvedLoansTotalAmountResult[0].total
       : 0;
 
-    // Best future balance: netAvailable + total to be repaid on approved loans
-    const bestFutureBalance = netAvailable + totalToBeRepaidOnApprovedLoans;
+    // Best future balance: netAvailable + total to be repaid on approved loans + pending penalties
+    const bestFutureBalance =
+      netAvailable + totalToBeRepaidOnApprovedLoans + totalPendingPenalties;
 
     res.status(200).json({
       status: "success",
@@ -448,6 +460,7 @@ const getNetContributions = async (req, res) => {
         totalInterestFromRepaidLoans,
         totalCollectedPenalties,
         totalPaidPenalties,
+        totalPendingPenalties,
         netAvailable,
         futureBalance,
         totalToBeRepaidOnApprovedLoans,

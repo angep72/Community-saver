@@ -263,14 +263,14 @@ const payPenalty = async (req, res) => {
       .populate("branch", "name code");
 
     // Create a negative penalty contribution
-    await Contribution.create({
-      memberId: penalty.member._id,
-      amount: -25,
-      type: "penalty",
-      contributionDate: new Date(),
-      branch: penalty.branch._id,
-      recordedBy: req.user._id,
-    });
+    // await Contribution.create({
+    //   memberId: penalty.member._id,
+    //   amount: -25,
+    //   type: "penalty",
+    //   contributionDate: new Date(),
+    //   branch: penalty.branch._id,
+    //   recordedBy: req.user._id,
+    // });
 
     // Log the action
     await AuditLog.create({

@@ -2,6 +2,7 @@ const User = require("../models/User");
 const AuditLog = require("../models/AuditLog");
 const Contribution = require("../models/Contribution");
 const Loan = require("../models/Loan");
+const Penalty = require("../models/Penalty"); // Add this import
 
 const getAllUsers = async (req, res) => {
   try {
@@ -370,14 +371,39 @@ const getMemberShares = async (req, res) => {
       ? approvedInterestResult[0].total
       : 0;
 
+    // Get total paid penalties using Penalty model
+    const paidPenaltiesResult = await Penalty.aggregate([
+      { $match: { status: "paid" } },
+      { $group: { _id: null, total: { $sum: "$amount" } } },
+    ]);
+    const totalPaidPenalties = paidPenaltiesResult[0]
+      ? paidPenaltiesResult[0].total
+      : 0;
+
+    // Get total pending penalties
+    const pendingPenaltyResult = await Penalty.aggregate([
+      { $match: { status: "pending" } },
+      { $group: { _id: null, total: { $sum: "$amount" } } },
+    ]);
+    const totalPendingPenalties = pendingPenaltyResult[0]
+      ? pendingPenaltyResult[0].total
+      : 0;
+
+    // Add penalties to interest calculations
+    const totalInterestWithPaidPenalties = totalInterest + totalPaidPenalties;
+    const totalInterestToBeEarnedWithPendingPenalties =
+      totalInterestToBeEarned + totalPendingPenalties;
+
     // Build response for each member
     const data = members.map((member) => {
       const share =
         totalContributions > 0
           ? member.totalContributions / totalContributions
           : 0;
-      const interestEarned = share * totalInterest;
-      const interestToBeEarned = share * totalInterestToBeEarned;
+      const interestEarned = share * totalInterestWithPaidPenalties;
+      const interestToBeEarned =
+        share * totalInterestToBeEarnedWithPendingPenalties;
+
       return {
         id: member._id,
         name: member.fullName,
@@ -395,6 +421,13 @@ const getMemberShares = async (req, res) => {
     res.status(200).json({
       status: "success",
       data,
+      summary: {
+        totalContributions,
+        totalInterest: totalInterestWithPaidPenalties,
+        totalInterestToBeEarned: totalInterestToBeEarnedWithPendingPenalties,
+        totalPaidPenalties,
+        totalPendingPenalties,
+      },
     });
   } catch (error) {
     res.status(500).json({
