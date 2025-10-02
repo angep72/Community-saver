@@ -43,21 +43,59 @@ const getAllUsers = async (req, res) => {
     // Get all user IDs
     const userIds = users.map((u) => u._id);
 
-    // Aggregate total contributions for each user (penalties should be negative amounts)
+    // Get contributions data
     const contributions = await Contribution.aggregate([
       { $match: { memberId: { $in: userIds } } },
       { $group: { _id: "$memberId", total: { $sum: "$amount" } } },
     ]);
 
-    // Map userId to total
+    // Get penalties status for each user
+    const penaltiesStatus = await Penalty.aggregate([
+      { $match: { member: { $in: userIds } } },
+      {
+        $group: {
+          _id: "$member",
+          totalPenalties: { $sum: "$amount" },
+          paidPenalties: {
+            $sum: {
+              $cond: [{ $eq: ["$status", "paid"] }, "$amount", 0],
+            },
+          },
+          pendingPenalties: {
+            $sum: {
+              $cond: [{ $eq: ["$status", "pending"] }, "$amount", 0],
+            },
+          },
+        },
+      },
+    ]);
+
+    // Create maps for quick lookup
     const contributionsMap = {};
+    const penaltiesMap = {};
+
     contributions.forEach((c) => {
       contributionsMap[c._id.toString()] = c.total;
     });
 
-    // Attach totalContributions to each user
+    penaltiesStatus.forEach((p) => {
+      penaltiesMap[p._id.toString()] = {
+        total: p.totalPenalties,
+        paid: p.paidPenalties,
+        pending: p.pendingPenalties,
+        isPaid: p.pendingPenalties === 0,
+      };
+    });
+
+    // Attach data to users
     users.forEach((user) => {
       user.totalContributions = contributionsMap[user._id.toString()] || 0;
+      user.penalties = penaltiesMap[user._id.toString()] || {
+        total: 0,
+        paid: 0,
+        pending: 0,
+        isPaid: true,
+      };
     });
 
     const total = await User.countDocuments(query);
