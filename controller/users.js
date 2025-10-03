@@ -2,7 +2,7 @@ const User = require("../models/User");
 const AuditLog = require("../models/AuditLog");
 const Contribution = require("../models/Contribution");
 const Loan = require("../models/Loan");
-const Penalty = require("../models/Penalty"); // Add this import
+const Penalty = require("../models/Penalty");
 
 const getAllUsers = async (req, res) => {
   try {
@@ -368,13 +368,14 @@ const getUserShares = async (req, res) => {
   }
 };
 
-// Get member shares and potential interest
+// Get member shares and potential interest (including branch leads)
 const getMemberShares = async (req, res) => {
   try {
-    // Get all active members
-    const members = await User.find({
-      role: "member",
+    // Get all active members AND branch leads who have contributions
+    const contributors = await User.find({
+      role: { $in: ["member", "branch_lead"] },
       isActive: true,
+      totalContributions: { $gt: 0 } // Only include users with contributions
     }).populate({ path: "branch", select: "name code location" });
 
     // Get total contributions in the system
@@ -432,29 +433,33 @@ const getMemberShares = async (req, res) => {
     const totalInterestToBeEarnedWithPendingPenalties =
       totalInterestToBeEarned + totalPendingPenalties;
 
-    // Build response for each member
-    const data = members.map((member) => {
+    // Build response for each contributor (member or branch lead)
+    const data = contributors.map((contributor) => {
       const share =
         totalContributions > 0
-          ? member.totalContributions / totalContributions
+          ? contributor.totalContributions / totalContributions
           : 0;
       const interestEarned = share * totalInterestWithPaidPenalties;
       const interestToBeEarned =
         share * totalInterestToBeEarnedWithPendingPenalties;
 
       return {
-        id: member._id,
-        name: member.fullName,
+        id: contributor._id,
+        name: contributor.fullName,
+        role: contributor.role === "branch_lead" ? "Branch Lead" : "Member",
         branch:
-          member.branch && member.branch.name
-            ? member.branch.name
-            : member.branch,
-        totalContribution: member.totalContributions,
+          contributor.branch && contributor.branch.name
+            ? contributor.branch.name
+            : contributor.branch,
+        totalContribution: contributor.totalContributions,
         sharePercentage: Math.round(share * 10000) / 100, // 2 decimal places
         interestEarned: Math.round(interestEarned * 100) / 100,
         interestToBeEarned: Math.round(interestToBeEarned * 100) / 100,
       };
     });
+
+    // Sort by total contribution descending
+    data.sort((a, b) => b.totalContribution - a.totalContribution);
 
     res.status(200).json({
       status: "success",
@@ -465,6 +470,7 @@ const getMemberShares = async (req, res) => {
         totalInterestToBeEarned: totalInterestToBeEarnedWithPendingPenalties,
         totalPaidPenalties,
         totalPendingPenalties,
+        totalContributors: data.length,
       },
     });
   } catch (error) {
