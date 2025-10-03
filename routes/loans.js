@@ -101,7 +101,7 @@ router.get("/:id", getSingleLoan);
  * @swagger
  * /loans:
  *   post:
- *     summary: Request a new loan (Members only)
+ *     summary: Request a new loan (Members and Branch Leads)
  *     tags: [Loans]
  *     requestBody:
  *       required: true
@@ -151,7 +151,7 @@ router.get("/:id", getSingleLoan);
  *             schema:
  *               $ref: '#/components/schemas/Error'
  *       403:
- *         description: Access denied - Members only
+ *         description: Access denied - Members and Branch Leads only
  *         content:
  *           application/json:
  *             schema:
@@ -160,10 +160,10 @@ router.get("/:id", getSingleLoan);
 
 // @route   POST /api/loans
 // @desc    Request new loan
-// @access  Member
+// @access  Member, Branch Lead
 router.post(
   "/",
-  authorize("member"),
+  authorize("member", "branch_lead"),
   validateLoan,
   handleValidationErrors,
   requestingLoan
