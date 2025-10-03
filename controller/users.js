@@ -377,82 +377,98 @@ const getMemberShares = async (req, res) => {
       isActive: true,
     }).populate({ path: "branch", select: "name code location" });
 
-    // Get total contributions in the system
-    const contribResult = await Contribution.aggregate([
-      { $group: { _id: null, total: { $sum: "$amount" } } },
-    ]);
-    const totalContributions = contribResult[0] ? contribResult[0].total : 0;
+    // Get all contributions with their dates
+    const contributions = await Contribution.find()
+      .select('memberId amount date')
+      .sort('date')
+      .lean();
 
-    // Get total interest earned from all repaid loans
-    const interestResult = await Loan.aggregate([
-      { $match: { status: "repaid" } },
-      {
-        $group: {
-          _id: null,
-          total: { $sum: { $subtract: ["$totalAmount", "$amount"] } },
-        },
-      },
-    ]);
-    const totalInterest = interestResult[0] ? interestResult[0].total : 0;
+    // Get all repaid loans with their details
+    const repaidLoans = await Loan.find({ status: "repaid" })
+      .select('totalAmount amount disbursementDate')
+      .sort('disbursementDate')
+      .lean();
 
-    // Get total interest to be earned from all approved loans
-    const approvedInterestResult = await Loan.aggregate([
-      { $match: { status: "approved" } },
-      {
-        $group: {
-          _id: null,
-          total: { $sum: { $subtract: ["$totalAmount", "$amount"] } },
-        },
-      },
-    ]);
-    const totalInterestToBeEarned = approvedInterestResult[0]
-      ? approvedInterestResult[0].total
-      : 0;
+    // Create a map of cumulative contributions per member over time
+    const memberContributionsMap = {};
+    members.forEach(member => {
+      memberContributionsMap[member._id.toString()] = {
+        totalContributions: 0,
+        contributionHistory: []
+      };
+    });
 
-    // Get total paid penalties using Penalty model
+    // Build contribution history
+    contributions.forEach(contribution => {
+      const memberId = contribution.memberId.toString();
+      if (memberContributionsMap[memberId]) {
+        const currentTotal = memberContributionsMap[memberId].totalContributions + contribution.amount;
+        memberContributionsMap[memberId].totalContributions = currentTotal;
+        memberContributionsMap[memberId].contributionHistory.push({
+          date: contribution.date,
+          total: currentTotal
+        });
+      }
+    });
+
+    // Calculate interest distribution for each repaid loan
+    const memberInterestMap = {};
+    members.forEach(member => {
+      memberInterestMap[member._id.toString()] = 0;
+    });
+
+    repaidLoans.forEach(loan => {
+      const loanInterest = loan.totalAmount - loan.amount;
+      let totalEligibleContributions = 0;
+      const memberContributionsAtLoan = {};
+
+      // Calculate eligible contributions for each member at loan disbursement
+      Object.entries(memberContributionsMap).forEach(([memberId, data]) => {
+        const contributionAtLoan = data.contributionHistory
+          .filter(h => h.date <= loan.disbursementDate)
+          .reduce((latest, h) => Math.max(latest, h.total), 0);
+
+        memberContributionsAtLoan[memberId] = contributionAtLoan;
+        totalEligibleContributions += contributionAtLoan;
+      });
+
+      // Distribute loan interest based on eligible contributions
+      if (totalEligibleContributions > 0) {
+        Object.entries(memberContributionsAtLoan).forEach(([memberId, amount]) => {
+          const interestShare = (amount / totalEligibleContributions) * loanInterest;
+          memberInterestMap[memberId] += interestShare;
+        });
+      }
+    });
+
+    // Get penalties data
     const paidPenaltiesResult = await Penalty.aggregate([
       { $match: { status: "paid" } },
       { $group: { _id: null, total: { $sum: "$amount" } } },
     ]);
-    const totalPaidPenalties = paidPenaltiesResult[0]
-      ? paidPenaltiesResult[0].total
-      : 0;
+    const totalPaidPenalties = paidPenaltiesResult[0]?.total || 0;
 
-    // Get total pending penalties
     const pendingPenaltyResult = await Penalty.aggregate([
       { $match: { status: "pending" } },
       { $group: { _id: null, total: { $sum: "$amount" } } },
     ]);
-    const totalPendingPenalties = pendingPenaltyResult[0]
-      ? pendingPenaltyResult[0].total
-      : 0;
+    const totalPendingPenalties = pendingPenaltyResult[0]?.total || 0;
 
-    // Add penalties to interest calculations
-    const totalInterestWithPaidPenalties = totalInterest + totalPaidPenalties;
-    const totalInterestToBeEarnedWithPendingPenalties =
-      totalInterestToBeEarned + totalPendingPenalties;
-
-    // Build response for each member
+    // Build response data
     const data = members.map((member) => {
-      const share =
-        totalContributions > 0
-          ? member.totalContributions / totalContributions
-          : 0;
-      const interestEarned = share * totalInterestWithPaidPenalties;
-      const interestToBeEarned =
-        share * totalInterestToBeEarnedWithPendingPenalties;
+      const memberId = member._id.toString();
+      const totalContribution = memberContributionsMap[memberId].totalContributions;
+      const share = totalContribution / (Object.values(memberContributionsMap)
+        .reduce((sum, data) => sum + data.totalContributions, 0));
 
       return {
         id: member._id,
         name: member.fullName,
-        branch:
-          member.branch && member.branch.name
-            ? member.branch.name
-            : member.branch,
-        totalContribution: member.totalContributions,
-        sharePercentage: Math.round(share * 10000) / 100, // 2 decimal places
-        interestEarned: Math.round(interestEarned * 100) / 100,
-        interestToBeEarned: Math.round(interestToBeEarned * 100) / 100,
+        branch: member.branch?.name || member.branch,
+        totalContribution,
+        sharePercentage: Math.round(share * 10000) / 100,
+        interestEarned: Math.round(memberInterestMap[memberId] * 100) / 100,
+        interestToBeEarned: Math.round(share * totalPendingPenalties * 100) / 100,
       };
     });
 
@@ -460,9 +476,10 @@ const getMemberShares = async (req, res) => {
       status: "success",
       data,
       summary: {
-        totalContributions,
-        totalInterest: totalInterestWithPaidPenalties,
-        totalInterestToBeEarned: totalInterestToBeEarnedWithPendingPenalties,
+        totalContributions: Object.values(memberContributionsMap)
+          .reduce((sum, data) => sum + data.totalContributions, 0),
+        totalInterest: Object.values(memberInterestMap)
+          .reduce((sum, interest) => sum + interest, 0),
         totalPaidPenalties,
         totalPendingPenalties,
       },
