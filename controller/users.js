@@ -369,78 +369,141 @@ const getUserShares = async (req, res) => {
 };
 
 // Get member shares and potential interest
+
 const getMemberShares = async (req, res) => {
   try {
     // Get all active members
     const members = await User.find({
       role: "member",
       isActive: true,
-    }).populate({ path: "branch", select: "name code location" });
+    })
+      .populate({ path: "branch", select: "name code location" })
+      .lean();
 
-    // Get total contributions in the system
-    const contribResult = await Contribution.aggregate([
-      { $group: { _id: null, total: { $sum: "$amount" } } },
-    ]);
-    const totalContributions = contribResult[0] ? contribResult[0].total : 0;
+    // Get all contributions with dates
+    const allContributions = await Contribution.find({})
+      .select("memberId amount contributionDate")
+      .lean();
 
-    // Get total interest earned from all repaid loans
-    const interestResult = await Loan.aggregate([
-      { $match: { status: "repaid" } },
-      {
-        $group: {
-          _id: null,
-          total: { $sum: { $subtract: ["$totalAmount", "$amount"] } },
-        },
-      },
-    ]);
-    const totalInterest = interestResult[0] ? interestResult[0].total : 0;
+    // Get all repaid loans with their interest
+    const repaidLoans = await Loan.find({ status: "repaid" })
+      .select("approvedDate amount totalAmount")
+      .lean();
 
-    // Get total interest to be earned from all approved loans
-    const approvedInterestResult = await Loan.aggregate([
-      { $match: { status: "approved" } },
-      {
-        $group: {
-          _id: null,
-          total: { $sum: { $subtract: ["$totalAmount", "$amount"] } },
-        },
-      },
-    ]);
-    const totalInterestToBeEarned = approvedInterestResult[0]
-      ? approvedInterestResult[0].total
-      : 0;
+    // Get all approved loans with their interest
+    const approvedLoans = await Loan.find({ status: "approved" })
+      .select("approvedDate amount totalAmount")
+      .lean();
 
-    // Get total paid penalties using Penalty model
+    // Get penalties
     const paidPenaltiesResult = await Penalty.aggregate([
       { $match: { status: "paid" } },
       { $group: { _id: null, total: { $sum: "$amount" } } },
     ]);
-    const totalPaidPenalties = paidPenaltiesResult[0]
-      ? paidPenaltiesResult[0].total
-      : 0;
+    const totalPaidPenalties = paidPenaltiesResult[0]?.total || 0;
 
-    // Get total pending penalties
     const pendingPenaltyResult = await Penalty.aggregate([
       { $match: { status: "pending" } },
       { $group: { _id: null, total: { $sum: "$amount" } } },
     ]);
-    const totalPendingPenalties = pendingPenaltyResult[0]
-      ? pendingPenaltyResult[0].total
-      : 0;
+    const totalPendingPenalties = pendingPenaltyResult[0]?.total || 0;
 
-    // Add penalties to interest calculations
-    const totalInterestWithPaidPenalties = totalInterest + totalPaidPenalties;
-    const totalInterestToBeEarnedWithPendingPenalties =
-      totalInterestToBeEarned + totalPendingPenalties;
+    // Calculate interest earned for each member from repaid loans
+    const memberInterestEarned = {};
+    let totalInterestDistributed = 0;
 
-    // Build response for each member
+    for (const loan of repaidLoans) {
+      const loanInterest = loan.totalAmount - loan.amount;
+      const loanApprovalDate = new Date(loan.approvedDate);
+
+      // Get contributions made BEFORE this loan was approved
+      const eligibleContributions = allContributions.filter(
+        (c) => new Date(c.contributionDate) < loanApprovalDate
+      );
+
+      // Calculate total eligible contributions
+      const totalEligible = eligibleContributions.reduce(
+        (sum, c) => sum + c.amount,
+        0
+      );
+
+      if (totalEligible > 0) {
+        // Distribute this loan's interest to eligible members
+        for (const member of members) {
+          const memberEligibleContribs = eligibleContributions
+            .filter((c) => c.memberId.toString() === member._id.toString())
+            .reduce((sum, c) => sum + c.amount, 0);
+
+          const memberShare = memberEligibleContribs / totalEligible;
+          const memberInterestFromLoan = memberShare * loanInterest;
+
+          if (!memberInterestEarned[member._id.toString()]) {
+            memberInterestEarned[member._id.toString()] = 0;
+          }
+          memberInterestEarned[member._id.toString()] += memberInterestFromLoan;
+          totalInterestDistributed += memberInterestFromLoan;
+        }
+      }
+    }
+
+    // Calculate potential interest from approved loans
+    const memberInterestToBeEarned = {};
+    let totalInterestToBeDistributed = 0;
+
+    for (const loan of approvedLoans) {
+      const loanInterest = loan.totalAmount - loan.amount;
+      const loanApprovalDate = new Date(loan.approvedDate);
+
+      // Get contributions made BEFORE this loan was approved
+      const eligibleContributions = allContributions.filter(
+        (c) => new Date(c.contributionDate) < loanApprovalDate
+      );
+
+      const totalEligible = eligibleContributions.reduce(
+        (sum, c) => sum + c.amount,
+        0
+      );
+
+      if (totalEligible > 0) {
+        for (const member of members) {
+          const memberEligibleContribs = eligibleContributions
+            .filter((c) => c.memberId.toString() === member._id.toString())
+            .reduce((sum, c) => sum + c.amount, 0);
+
+          const memberShare = memberEligibleContribs / totalEligible;
+          const memberInterestFromLoan = memberShare * loanInterest;
+
+          if (!memberInterestToBeEarned[member._id.toString()]) {
+            memberInterestToBeEarned[member._id.toString()] = 0;
+          }
+          memberInterestToBeEarned[member._id.toString()] +=
+            memberInterestFromLoan;
+          totalInterestToBeDistributed += memberInterestFromLoan;
+        }
+      }
+    }
+
+    // Calculate total contributions for percentage
+    const totalContributions = allContributions.reduce(
+      (sum, c) => sum + c.amount,
+      0
+    );
+
+    // Distribute penalties proportionally based on current total contributions
     const data = members.map((member) => {
+      const memberTotalContrib = member.totalContributions || 0;
       const share =
-        totalContributions > 0
-          ? member.totalContributions / totalContributions
-          : 0;
-      const interestEarned = share * totalInterestWithPaidPenalties;
+        totalContributions > 0 ? memberTotalContrib / totalContributions : 0;
+
+      // Interest from loans (time-weighted)
+      const interestEarned =
+        memberInterestEarned[member._id.toString()] || 0;
       const interestToBeEarned =
-        share * totalInterestToBeEarnedWithPendingPenalties;
+        memberInterestToBeEarned[member._id.toString()] || 0;
+
+      // Penalties distributed by current contribution share
+      const penaltyShareEarned = share * totalPaidPenalties;
+      const penaltyShareToBeEarned = share * totalPendingPenalties;
 
       return {
         id: member._id,
@@ -449,10 +512,11 @@ const getMemberShares = async (req, res) => {
           member.branch && member.branch.name
             ? member.branch.name
             : member.branch,
-        totalContribution: member.totalContributions,
-        sharePercentage: Math.round(share * 10000) / 100, // 2 decimal places
-        interestEarned: Math.round(interestEarned * 100) / 100,
-        interestToBeEarned: Math.round(interestToBeEarned * 100) / 100,
+        totalContribution: memberTotalContrib,
+        sharePercentage: Math.round(share * 10000) / 100,
+        interestEarned: Math.round((interestEarned + penaltyShareEarned) * 100) / 100,
+        interestToBeEarned:
+          Math.round((interestToBeEarned + penaltyShareToBeEarned) * 100) / 100,
       };
     });
 
@@ -461,8 +525,9 @@ const getMemberShares = async (req, res) => {
       data,
       summary: {
         totalContributions,
-        totalInterest: totalInterestWithPaidPenalties,
-        totalInterestToBeEarned: totalInterestToBeEarnedWithPendingPenalties,
+        totalInterest: totalInterestDistributed + totalPaidPenalties,
+        totalInterestToBeEarned:
+          totalInterestToBeDistributed + totalPendingPenalties,
         totalPaidPenalties,
         totalPendingPenalties,
       },
