@@ -185,15 +185,7 @@ const getSingleLoan = async (req, res) => {
 
 const requestingLoan = async (req, res) => {
   try {
-    // Check if user is authorized to request loans
-    if (req.user.role !== 'member' && req.user.role !== 'branch_lead') {
-      return res.status(403).json({
-        status: "error",
-        message: "Only members and branch leads can request loans",
-      });
-    }
-
-    // Check if user has any pending loans
+    // Check if member has any pending loans
     const pendingLoan = await Loan.findOne({
       member: req.user._id,
       status: { $in: ["pending", "approved"] },
@@ -211,13 +203,12 @@ const requestingLoan = async (req, res) => {
       ...req.body,
       member: req.user._id,
       branch: req.user.branch._id,
-      requestedBy: req.user.role, // Add this to track who requested the loan
     };
 
     const loan = await Loan.create(loanData);
     await loan.populate({
       path: "member",
-      select: "firstName lastName membershipId email branch role",
+      select: "firstName lastName membershipId email branch",
       populate: { path: "branch", select: "name code location" },
     });
     await loan.populate("branch", "name code");
@@ -226,22 +217,19 @@ const requestingLoan = async (req, res) => {
     const User = require("../models/User");
     const user = await User.findById(req.user._id);
     if (user) {
+      // Sum all loans for this user
       const allLoans = await Loan.find({ member: user._id });
       user.totalLoans = allLoans.reduce((sum, l) => sum + (l.amount || 0), 0);
       await user.save();
     }
 
-    // Log the action with role information
+    // Log the action
     await AuditLog.create({
       user: req.user._id,
       action: "request_loan",
       resource: "loan",
       resourceId: loan._id,
-      details: {
-        amount: loan.amount,
-        requestedBy: req.user.role,
-        branch: req.user.branch._id,
-      },
+      details: { amount: loan.amount },
       ipAddress: req.ip,
       userAgent: req.get("User-Agent"),
     });
@@ -280,6 +268,7 @@ const approvingLoan = async (req, res) => {
         message: "Loan has already been processed",
       });
     }
+
 
     // Update loan
     const updateData = {
@@ -406,6 +395,8 @@ const repaymentLoan = async (req, res) => {
     });
   }
 };
+
+
 
 module.exports = {
   getAllLoans,
