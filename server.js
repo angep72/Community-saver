@@ -52,6 +52,7 @@ app.use(
       const allowedOrigins = [
         "http://localhost:5173",
         "https://lovely-nougat-b6139b.netlify.app",
+        "https://communitysaver.netlify.app"
       ];
 
       if (allowedOrigins.indexOf(origin) !== -1) {
