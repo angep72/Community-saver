@@ -123,7 +123,7 @@ const getAllUsers = async (req, res) => {
 
 const getOneUser = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id).populate("branch");
+    const user = await User.findById(req.params.id).populate("branch").lean();
 
     if (!user) {
       return res.status(404).json({
@@ -154,6 +154,42 @@ const getOneUser = async (req, res) => {
         });
       }
     }
+
+    // Get penalties status for the user
+    const penaltiesStatus = await Penalty.aggregate([
+      { $match: { member: user._id } },
+      {
+        $group: {
+          _id: null,
+          totalPenalties: { $sum: "$amount" },
+          paidPenalties: {
+            $sum: {
+              $cond: [{ $eq: ["$status", "paid"] }, "$amount", 0],
+            },
+          },
+          pendingPenalties: {
+            $sum: {
+              $cond: [{ $eq: ["$status", "pending"] }, "$amount", 0],
+            },
+          },
+        },
+      },
+    ]);
+
+    // Add penalties information to user object
+    user.penalties = penaltiesStatus[0]
+      ? {
+          total: penaltiesStatus[0].totalPenalties,
+          paid: penaltiesStatus[0].paidPenalties,
+          pending: penaltiesStatus[0].pendingPenalties,
+          isPaid: penaltiesStatus[0].pendingPenalties === 0,
+        }
+      : {
+          total: 0,
+          paid: 0,
+          pending: 0,
+          isPaid: true,
+        };
 
     res.status(200).json({
       status: "success",
