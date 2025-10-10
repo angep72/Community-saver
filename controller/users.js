@@ -2,6 +2,7 @@ const User = require("../models/User");
 const AuditLog = require("../models/AuditLog");
 const Contribution = require("../models/Contribution");
 const Loan = require("../models/Loan");
+const Penalty = require("../models/Penalty"); // Import Penalty model
 
 const getAllUsers = async (req, res) => {
   try {
@@ -409,6 +410,25 @@ const getMemberShares = async (req, res) => {
       summedInterestFromRepaidLoans += interestAmount;
     }
 
+    // Process paid penalties (additional interest earned)
+    const paidPenalties = await Penalty.find({ status: "paid" })
+      .select("amount paidDate updatedAt createdAt")
+      .lean();
+
+    let summedInterestFromPaidPenalties = 0;
+    for (const penalty of paidPenalties) {
+      const paidDate = penalty.paidDate || penalty.updatedAt || penalty.createdAt;
+      const penaltyAmount = penalty.amount || 0;
+      if (!paidDate || penaltyAmount <= 0) continue;
+
+      const allocations = await allocateByContribsBefore(penaltyAmount, paidDate);
+      Object.entries(allocations).forEach(([id, value]) => {
+        interestEarnedMap[id] = (interestEarnedMap[id] || 0) + value;
+      });
+
+      summedInterestFromPaidPenalties += penaltyAmount;
+    }
+
     // Process approved loans (interest to be earned)
     const approvedLoans = await Loan.find({ status: "approved" })
       .select("totalAmount amount approvedAt updatedAt createdAt")
@@ -455,9 +475,10 @@ const getMemberShares = async (req, res) => {
       data,
       summary: {
         totalContributions,
-        totalInterest: Math.round(summedInterestFromRepaidLoans * 100) / 100,
+        totalInterest: Math.round((summedInterestFromRepaidLoans + summedInterestFromPaidPenalties) * 100) / 100,
         totalInterestToBeEarned: Math.round(summedInterestFromApprovedLoans * 100) / 100,
         totalContributors: data.length,
+        totalPenaltyInterest: Math.round(summedInterestFromPaidPenalties * 100) / 100,
       },
     });
   } catch (error) {
