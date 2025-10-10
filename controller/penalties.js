@@ -5,10 +5,6 @@ const Contribution = require("../models/Contribution");
 
 const getAllPenalties = async (req, res) => {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const skip = (page - 1) * limit;
-
     let query = {};
 
     // Role-based filtering
@@ -47,11 +43,7 @@ const getAllPenalties = async (req, res) => {
       .populate("assignedBy", "firstName lastName")
       .populate("waivedBy", "firstName lastName")
       .populate("branch", "name code")
-      .sort({ assignedDate: -1 })
-      .skip(skip)
-      .limit(limit);
-
-    const total = await Penalty.countDocuments(query);
+      .sort({ assignedDate: -1 });
 
     // Calculate summary
     const summary = await Penalty.aggregate([
@@ -83,12 +75,6 @@ const getAllPenalties = async (req, res) => {
       status: "success",
       data: {
         penalties,
-        pagination: {
-          page,
-          limit,
-          total,
-          pages: Math.ceil(total / limit),
-        },
         summary: summary[0] || {
           totalAmount: 0,
           pendingAmount: 0,
