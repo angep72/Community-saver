@@ -6,6 +6,9 @@ const Penalty = require("../models/Penalty"); // Import Penalty model
 
 const getAllUsers = async (req, res) => {
   try {
+    // Add caching headers for read-only endpoint
+    res.set("Cache-Control", "public, max-age=30");
+
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
@@ -85,6 +88,9 @@ const getAllUsers = async (req, res) => {
 
 const getOneUser = async (req, res) => {
   try {
+    // Add caching headers for read-only endpoint
+    res.set("Cache-Control", "public, max-age=30");
+
     const user = await User.findById(req.params.id).populate("branch").lean();
 
     if (!user) {
@@ -294,6 +300,9 @@ const deleteUser = async (req, res) => {
 // Endpoint to calculate user shares
 const getUserShares = async (req, res) => {
   try {
+    // Add caching headers for read-only endpoint with computed data
+    res.set("Cache-Control", "public, max-age=30");
+
     // Get all active members with their branch and totalContributions
     const users = await User.find({ role: "member", isActive: true })
       .populate("branch", "name code")
@@ -333,6 +342,9 @@ const getUserShares = async (req, res) => {
 // Get member shares and potential interest (including branch leads)
 const getMemberShares = async (req, res) => {
   try {
+    // Add caching headers for read-only endpoint with heavy computations
+    res.set("Cache-Control", "public, max-age=30");
+
     // Get all active members AND branch leads who have contributions
     const contributors = await User.find({
       role: { $in: ["member", "branch_lead"] },
