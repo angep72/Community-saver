@@ -441,24 +441,40 @@ const getMemberShares = async (req, res) => {
       summedInterestFromPaidPenalties += penaltyAmount;
     }
 
-    // Process approved loans (interest to be earned)
+    // Process approved loans and pending penalties (interest to be earned)
     const approvedLoans = await Loan.find({ status: "approved" })
-      .select("totalAmount amount approvedAt updatedAt createdAt")
+      .select("totalAmount amount")
+      .lean();
+
+    const pendingPenalties = await Penalty.find({ status: { $ne: "paid" } })
+      .select("amount")
       .lean();
 
     let summedInterestFromApprovedLoans = 0;
+    
+    // Calculate total interest from approved loans
     for (const loan of approvedLoans) {
-      const approvedAt = loan.approvedAt || loan.updatedAt || loan.createdAt;
       const interestAmount = (loan.totalAmount || 0) - (loan.amount || 0);
-      if (!approvedAt || interestAmount <= 0) continue;
-
-      const allocations = await allocateByContribsBefore(interestAmount, approvedAt);
-      Object.entries(allocations).forEach(([id, value]) => {
-        interestToBeEarnedMap[id] = (interestToBeEarnedMap[id] || 0) + value;
-      });
-
-      summedInterestFromApprovedLoans += interestAmount;
+      if (interestAmount > 0) {
+        summedInterestFromApprovedLoans += interestAmount;
+      }
     }
+
+    // Add pending penalties to interest to be earned
+    const summedPendingPenalties = pendingPenalties.reduce((sum, penalty) => 
+      sum + (penalty.amount || 0), 0);
+
+    // Total pending interest includes both loan interest and pending penalties
+    const totalPendingInterest = summedInterestFromApprovedLoans + summedPendingPenalties;
+
+    // Distribute the total pending interest based on contribution shares
+    contributors.forEach(contributor => {
+      const id = contributor._id.toString();
+      const sharePercentage = totalContributions > 0 
+        ? (contributor.totalContributions || 0) / totalContributions 
+        : 0;
+      interestToBeEarnedMap[id] = totalPendingInterest * sharePercentage;
+    });
 
     // Build response data
     const data = contributors.map((contributor) => {
@@ -503,6 +519,126 @@ const getMemberShares = async (req, res) => {
   }
 };
 
+const getUserReport = async (req, res) => {
+  try {
+    const userId = req.params.id;
+
+    // Get user details
+    const user = await User.findById(userId)
+      .populate('branch', 'name code location')
+      .select('-password')
+      .lean();
+
+    if (!user) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'User not found'
+      });
+    }
+
+    // Get contributions
+    const contributions = await Contribution.find({ memberId: userId })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const totalContributions = contributions.reduce((sum, contrib) => sum + contrib.amount, 0);
+
+    // Get loans
+    const loans = await Loan.find({ memberId: userId })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // Calculate loan statistics
+    const loanStats = {
+      totalLoansCount: loans.length,
+      activeLoans: loans.filter(loan => ['pending', 'approved'].includes(loan.status)),
+      repaidLoans: loans.filter(loan => loan.status === 'repaid'),
+      totalBorrowed: loans.reduce((sum, loan) => sum + (loan.amount || 0), 0),
+      totalRepaid: loans.reduce((sum, loan) => sum + (loan.totalAmount || 0), 0),
+    };
+
+    // Get penalties
+    const penalties = await Penalty.find({ memberId: userId })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // Calculate penalty statistics
+    const penaltyStats = {
+      totalPenalties: penalties.length,
+      unpaidPenalties: penalties.filter(penalty => penalty.status !== 'paid'),
+      totalPenaltyAmount: penalties.reduce((sum, penalty) => sum + penalty.amount, 0),
+      paidPenaltyAmount: penalties
+        .filter(penalty => penalty.status === 'paid')
+        .reduce((sum, penalty) => sum + penalty.amount, 0),
+    };
+
+    // Calculate shares and interest
+    const { interestEarned, interestToBeEarned } = await calculateUserInterest(userId);
+
+    const report = {
+      userDetails: {
+        id: user._id,
+        name: `${user.firstName} ${user.lastName}`,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        branch: user.branch,
+        membershipDate: user.createdAt,
+        isActive: user.isActive,
+      },
+      contributionSummary: {
+        totalContributions,
+        contributionCount: contributions.length,
+        lastContribution: contributions[0],
+        allContributions: contributions,
+      },
+      loanSummary: {
+        ...loanStats,
+        activeLoansDetails: loanStats.activeLoans,
+        recentLoans: loans.slice(0, 5), // Last 5 loans
+      },
+      penaltySummary: {
+        ...penaltyStats,
+        recentPenalties: penalties.slice(0, 5), // Last 5 penalties
+      },
+      investmentSummary: {
+        totalInterestEarned: interestEarned,
+        pendingInterest: interestToBeEarned,
+        sharePercentage: totalContributions > 0 
+          ? ((totalContributions / await getTotalContributions()) * 100).toFixed(2) 
+          : '0.00',
+      }
+    };
+
+    res.status(200).json({
+      status: 'success',
+      data: report
+    });
+
+  } catch (error) {
+    console.error('getUserReport error:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to generate user report',
+      error: error.message
+    });
+  }
+};
+
+// Helper functions
+async function calculateUserInterest(userId) {
+  // Reuse logic from getMemberShares but for single user
+  // ... implementation details ...
+  return { interestEarned: 0, interestToBeEarned: 0 }; // Implement actual calculation
+}
+
+async function getTotalContributions() {
+  const result = await Contribution.aggregate([
+    { $group: { _id: null, total: { $sum: '$amount' } } }
+  ]);
+  return result[0]?.total || 0;
+}
+
 module.exports = {
   getAllUsers,
   getOneUser,
@@ -511,4 +647,5 @@ module.exports = {
   deleteUser,
   getUserShares,
   getMemberShares,
+  getUserReport,
 };
