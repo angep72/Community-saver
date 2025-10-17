@@ -1,4 +1,6 @@
 const express = require("express");
+const passport = require("passport");
+const jwt = require("jsonwebtoken");
 
 const { protect } = require("../middleware/auth");
 const {
@@ -11,28 +13,11 @@ const {
   loginController,
   logoutController,
   profileController,
+  forgotPasswordController,
+  resetPasswordController,
 } = require("../controller/auth");
 
 const router = express.Router();
-
-const passport = require("passport");
-
-// Google OAuth login route
-router.get(
-  "/google",
-  passport.authenticate("google", { scope: ["profile", "email"] })
-);
-
-// Google OAuth callback route
-router.get(
-  "/google/callback",
-   passport.authenticate("google", { failureRedirect: "api/auth/login", session: true }),
-  (req, res) => {
-    // Successful authentication, redirect or respond as needed
-    // You can generate a JWT here if you want to use token-based auth
-    res.send("You reached the callback URI")
-  }
-);
 
 /**
  * @swagger
@@ -211,5 +196,65 @@ router.post("/logout", protect, logoutController);
 // @desc    Get current user profile
 // @access  Private
 router.get("/profile", protect, profileController);
+// Replace your Google OAuth routes in routes/auth.js
+
+// Initiate Google OAuth
+router.get(
+  "/google",
+  passport.authenticate("google", {
+    scope: ["profile", "email"],
+  })
+);
+
+// Handle Google OAuth callback
+router.get(
+  "/google/callback",
+  passport.authenticate("google", {
+    failureRedirect: (process.env.FRONTEND_URL || "http://localhost:3000") + "/login?error=auth_failed",
+    session: false,
+  }),
+  (req, res) => {
+    try {
+      // If Passport failed, req.user will be false and req.authInfo may contain the error
+      if (!req.user) {
+        const errorMsg = req.authInfo && req.authInfo.message
+          ? req.authInfo.message
+          : "User does not have an account.";
+        return res.redirect(
+          `${process.env.FRONTEND_URL || "http://localhost:3000"}/login?error=${encodeURIComponent(errorMsg)}`
+        );
+      }
+
+
+      // Generate JWT token with proper fallbacks
+      const token = jwt.sign(
+        {
+          id: req.user._id,
+          email: req.user.email,
+          role: req.user.role,
+        },
+        process.env.JWT_SECRET || "your_jwt_secret_fallback",
+        { expiresIn: process.env.JWT_EXPIRE || "7d" }
+      );
+      // Build redirect URL
+      const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+      const redirectUrl = `${frontendUrl}/auth/callback?token=${encodeURIComponent(token)}&role=${req.user.role}`;
+
+      // Redirect to frontend callback with token and role
+      res.redirect(redirectUrl);
+    } catch (error) {
+      console.error("❌ OAuth callback error:", error);
+      res.redirect(
+        `${process.env.FRONTEND_URL || "http://localhost:3000"}/login?error=callback_error`
+      );
+    }
+  }
+);
+
+// Forgot Password
+router.post("/forgot-password", forgotPasswordController);
+
+// Reset Password route
+router.post("/reset-password", resetPasswordController);
 
 module.exports = router;

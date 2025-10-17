@@ -3,7 +3,6 @@ const AuditLog = require("../models/AuditLog");
 const User = require("../models/User");
 
 const getAllBranch = async (req, res) => {
-  console.log(req.user);
   try {
     let query = {};
 

@@ -79,21 +79,13 @@ const getAllLoans = async (req, res) => {
     // Add risk assessment to each loan with debug logs
     const loansWithRisk = loans.map((loan) => {
       let risk = null;
-      // Debug log for member and loan values
-      console.log("Loan ID:", loan._id);
-      console.log("Loan amount:", loan.amount);
-      console.log("Member:", loan.member);
       if (loan.member && loan.member.totalContributions && loan.amount) {
-        console.log(
-          "Member totalContributions:",
-          loan.member.totalContributions
-        );
         risk = Math.min(
           100,
           (loan.amount / loan.member.totalContributions) * 100
         );
         risk = Number.isFinite(risk) ? Math.round(risk * 100) / 100 : null;
-        console.log("Calculated risk:", risk);
+
       } else {
         console.log("Risk could not be calculated for this loan.");
       }

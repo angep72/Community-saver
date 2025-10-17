@@ -1,6 +1,8 @@
 const User = require("../models/User");
 const jwt = require("jsonwebtoken");
 const AuditLog = require("../models/AuditLog");
+const crypto = require("crypto");
+const nodemailer = require("nodemailer");
 
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
@@ -12,7 +14,6 @@ const registerController = async (req, res) => {
   try {
     const { firstName, lastName, email, password, role, branch } = req.body;
 
-    // Check if user already exists
     const existingUser = await User.findOne({
       $or: [{ email }],
     });
@@ -24,7 +25,6 @@ const registerController = async (req, res) => {
       });
     }
 
-    // Create user with status defaulting to 'pending'
     const user = await User.create({
       firstName,
       lastName,
@@ -35,11 +35,9 @@ const registerController = async (req, res) => {
       status: "pending", 
     });
 
-    // Generate token
     const token = generateToken(user._id);
-    console.log(user._id);
+  
 
-    // Log the registration
     await AuditLog.create({
       user: user._id,
       action: "register",
@@ -77,26 +75,17 @@ const loginController = async (req, res) => {
   try {
     const { email, password } = req.body;
     
-    console.log('Login attempt:', { email, password: password ? '[PROVIDED]' : '[MISSING]' });
-
-    // Find user and include password
     const user = await User.findOne({ email })
       .select("+password")
       .populate("branch");
-
-    console.log('User found:', user ? { id: user._id, email: user.email, isActive: user.isActive, status: user.status } : 'NOT FOUND');
-
     if (!user) {
-      console.log('Login failed: User not found');
       return res.status(401).json({
         status: "error",
         message: "Invalid credentials",
       });
     }
 
-    // Check if user is active
     if (!user.isActive) {
-      console.log('Login failed: User not active');
       return res.status(401).json({
         status: "error",
         message: "Account is deactivated. Contact administrator.",
@@ -112,9 +101,7 @@ const loginController = async (req, res) => {
       });
     }
 
-    // If not admin, check if user is approved
     if (user.role !== "admin" && user.status !== "approved") {
-      console.log('Login failed: User not approved, status:', user.status);
       return res.status(403).json({
         status: "error",
         message: `Your account status is '${user.status}'. Please contact the admin for approval.`,
@@ -122,13 +109,10 @@ const loginController = async (req, res) => {
       });
     }
 
-    // Update last login
     await user.updateLastLogin();
 
-    // Generate token
     const token = generateToken(user._id);
 
-    // Log the login
     await AuditLog.create({
       user: user._id,
       action: "login",
@@ -137,8 +121,6 @@ const loginController = async (req, res) => {
       ipAddress: req.ip,
       userAgent: req.get("User-Agent"),
     });
-
-    console.log('Login successful for user:', user.email);
 
     res.status(200).json({
       status: "success",
@@ -173,7 +155,6 @@ const loginController = async (req, res) => {
 
 const logoutController = async (req, res) => {
   try {
-    // Log the logout
     await AuditLog.create({
       user: req.user._id,
       action: "logout",
@@ -226,9 +207,111 @@ const profileController = async (req, res) => {
     });
   }
 };
+
+// Forgot Password - FIXED VERSION
+const forgotPasswordController = async (req, res) => {
+  const { email } = req.body;
+  try {
+    const user = await User.findOne({ email });
+    if (user) {
+      // Generate token and expiry
+      const resetToken = crypto.randomBytes(32).toString("hex");
+      const resetTokenExpiry = Date.now() + 60 * 60 * 1000; // 1 hour
+
+      // IMPORTANT: Use findByIdAndUpdate to avoid triggering password hashing
+      await User.findByIdAndUpdate(user._id, {
+        resetPasswordToken: resetToken,
+        resetPasswordExpires: resetTokenExpiry
+      });
+
+
+      // Mailtrap SMTP transport
+      const transporter = nodemailer.createTransport({
+        host: "sandbox.smtp.mailtrap.io",
+        port: 2525,
+        auth: {
+          user: "0a333f61897aab",
+          pass: "cedf131d02fbf2",
+        },
+        tls: {
+          rejectUnauthorized: false,
+        },
+      });
+
+      const resetUrl = `${process.env.FRONTEND_URL || "http://localhost:5173"}/reset-password?token=${resetToken}&email=${encodeURIComponent(email)}`;
+      const mailHtml = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto;">
+          <h2 style="color: #2d3748;">Password Reset Request</h2>
+          <p>Hello${user.firstName ? ` ${user.firstName}` : ""},</p>
+          <p>You requested to reset your password for your Community Saver account.</p>
+          <p>
+            <a href="${resetUrl}" style="background: #3182ce; color: #fff; padding: 10px 20px; text-decoration: none; border-radius: 4px;">
+              Reset Password
+            </a>
+          </p>
+          <p>If you did not request this, please ignore this email.</p>
+          <hr>
+          <small>This link will expire in 1 hour.</small>
+        </div>
+      `;
+
+      await transporter.sendMail({
+        to: user.email,
+        from: '"Community Saver" <no-reply@communitysaver.com>',
+        subject: "Reset Your Community Saver Password",
+        html: mailHtml,
+      });
+
+    }
+    // Always respond with success for security
+    res.json({ message: "Password reset link sent" });
+  } catch (error) {
+    console.error("❌ Forgot password error:", error);
+    res.json({ message: "Password reset link sent" });
+  }
+};
+
+// Reset Password - ENHANCED WITH DEBUGGING
+const resetPasswordController = async (req, res) => {
+  const { token, newPassword, email } = req.body;
+  try {
+
+    // First check if user exists
+    const userExists = await User.findOne({ email });
+    if (!userExists) {
+      return res.status(400).json({ message: "Invalid or expired token" });
+    }
+
+    // Find user with all conditions
+    const user = await User.findOne({
+      email,
+      resetPasswordToken: token,
+      resetPasswordExpires: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: "Invalid or expired token" });
+    }
+    // Update password
+    user.password = newPassword;
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+    await user.save();    
+    res.json({ message: "Password reset successful" });
+  } catch (error) {
+    console.error("❌ Password reset error:", error);
+    res.status(500).json({ 
+      message: "Password reset failed", 
+      error: error.message 
+    });
+  }
+};
+
 module.exports = {
   registerController,
   loginController,
   logoutController,
   profileController,
+  forgotPasswordController,
+  resetPasswordController,
 };
