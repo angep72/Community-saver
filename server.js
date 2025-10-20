@@ -19,6 +19,7 @@ const loanRoutes = require("./routes/loans");
 const penaltyRoutes = require("./routes/penalties");
 const dashboardRoutes = require("./routes/dashboard");
 const branchRoutes = require("./routes/branches");
+const reportsRoutes = require("./routes/reports");
 
 const app = express();
 
@@ -89,6 +90,7 @@ app.use("/api/loans", loanRoutes);
 app.use("/api/penalties", penaltyRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/branches", branchRoutes);
+app.use("/api/reports", reportsRoutes);
 
 // API Documentation
 app.use(
