@@ -4,6 +4,10 @@ const path = require("path");
 const fs = require("fs");
 const mongoose = require("mongoose");
 const { protect, authorize } = require("../middleware/auth");
+const User = require("../models/User");
+const sgMail = require("@sendgrid/mail");
+
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 const router = express.Router();
 
@@ -30,6 +34,7 @@ const storage = multer.diskStorage({
   },
 });
 const upload = multer({ storage });
+const uploadMemory = multer({ storage: multer.memoryStorage() });
 
 // Multer error handler middleware
 function multerErrorHandler(err, req, res, next) {
@@ -122,5 +127,56 @@ router.get("/:id/download", protect, async (req, res) => {
     });
   }
 });
+
+// Send PDF report to all users (admin only)
+router.post(
+  "/send-pdf",
+  protect,
+  authorize("admin"),
+  uploadMemory.single("pdf"),
+  async (req, res) => {
+    try {
+      if (!req.file || !req.file.buffer) {
+        return res.status(400).json({ message: "PDF file is required." });
+      }
+
+      // Check attachment size (SendGrid limit is 20MB)
+      if (req.file.size > 20 * 1024 * 1024) {
+        return res.status(400).json({ message: "Attachment exceeds 20MB limit." });
+      }
+
+      // Get all user emails as an array of strings, excluding admins
+      const users = await User.find({ role: { $ne: "admin" } }, "email");
+      const emails = users.map((u) => u.email);
+      if (emails.length === 0) {
+        
+        return res.status(404).json({ message: "No users found." });
+      }
+
+      const msg = {
+        to: emails, // array of email strings
+        from: process.env.SENDGRID_VERIFIED_SENDER,
+        subject: "Financial Management System Report",
+        text: "A new report has been sent from the Financial Management System. Please find the attached PDF.",
+        html: "<p>A new report has been sent from the <b>Financial Management System</b>. Please find the attached PDF.</p>",
+        attachments: [
+          {
+            content: req.file.buffer.toString("base64"),
+            filename: req.file.originalname,
+            type: req.file.mimetype,
+            disposition: "attachment",
+          },
+        ],
+      };
+
+      await sgMail.sendMultiple(msg);
+
+      res.status(200).json({ message: "Report sent to all users." });
+    } catch (err) {
+      console.error("SendGrid error:", err?.response?.body || err);
+      res.status(500).json({ message: "Failed to send report.", error: err?.response?.body || err.message });
+    }
+  }
+);
 
 module.exports = router;
