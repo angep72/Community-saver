@@ -2,7 +2,9 @@ const User = require("../models/User");
 const jwt = require("jsonwebtoken");
 const AuditLog = require("../models/AuditLog");
 const crypto = require("crypto");
-const nodemailer = require("nodemailer");
+const sgMail = require("@sendgrid/mail");
+
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
@@ -208,7 +210,7 @@ const profileController = async (req, res) => {
   }
 };
 
-// Forgot Password - FIXED VERSION
+// Forgot Password - now uses SendGrid ONLY
 const forgotPasswordController = async (req, res) => {
   const { email } = req.body;
   try {
@@ -222,20 +224,6 @@ const forgotPasswordController = async (req, res) => {
       await User.findByIdAndUpdate(user._id, {
         resetPasswordToken: resetToken,
         resetPasswordExpires: resetTokenExpiry
-      });
-
-
-      // Mailtrap SMTP transport
-      const transporter = nodemailer.createTransport({
-        host: "sandbox.smtp.mailtrap.io",
-        port: 2525,
-        auth: {
-          user: "0a333f61897aab",
-          pass: "cedf131d02fbf2",
-        },
-        tls: {
-          rejectUnauthorized: false,
-        },
       });
 
       const resetUrl = `${process.env.FRONTEND_URL || "http://localhost:5173"}/reset-password?token=${resetToken}&email=${encodeURIComponent(email)}`;
@@ -255,13 +243,13 @@ const forgotPasswordController = async (req, res) => {
         </div>
       `;
 
-      await transporter.sendMail({
+      // SendGrid send
+      await sgMail.send({
         to: user.email,
-        from: '"Community Saver" <no-reply@communitysaver.com>',
+        from: process.env.SENDGRID_VERIFIED_SENDER,
         subject: "Reset Your Community Saver Password",
         html: mailHtml,
       });
-
     }
     // Always respond with success for security
     res.json({ message: "Password reset link sent" });
