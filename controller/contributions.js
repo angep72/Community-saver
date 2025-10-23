@@ -357,59 +357,46 @@ const getTotalContributions = async (req, res) => {
 // Get the sum of all contributions minus total approved loans
 const getNetContributions = async (req, res) => {
   try {
-    // Sum all contributions
+    // Only include contributions from active users (memberId not null)
+    const activeUsers = await User.find({ isActive: true }).select("_id");
+    const activeUserIds = activeUsers.map((u) => u._id);
+
+    // Sum all contributions from active users only
     const contribResult = await Contribution.aggregate([
+      { $match: { memberId: { $in: activeUserIds } } },
       { $group: { _id: null, total: { $sum: "$amount" } } },
     ]);
     const totalContributions = contribResult[0] ? contribResult[0].total : 0;
 
-    // Sum all approved loans
-    const loanResult = await Loan.aggregate([
-      { $match: { status: "approved" } },
-      { $group: { _id: null, total: { $sum: "$amount" } } },
-    ]);
-    const totalApprovedLoans = loanResult[0] ? loanResult[0].total : 0;
+    // Sum all approved loans with non-null member
+    const approvedLoans = await Loan.find({ status: "approved" }).populate("member");
+    const totalApprovedLoans = approvedLoans
+      .filter(l => l.member !== null)
+      .reduce((sum, l) => sum + (l.amount || 0), 0);
 
-    // Sum all interest from repaid loans
-    const interestResult = await Loan.aggregate([
-      { $match: { status: "repaid" } },
-      {
-        $group: {
-          _id: null,
-          total: { $sum: { $subtract: ["$totalAmount", "$amount"] } },
-        },
-      },
-    ]);
-    const totalInterestFromRepaidLoans = interestResult[0]
-      ? interestResult[0].total
-      : 0;
+    // Sum all interest from repaid loans with non-null member
+    const repaidLoans = await Loan.find({ status: "repaid" }).populate("member");
+    const totalInterestFromRepaidLoans = repaidLoans
+      .filter(l => l.member !== null)
+      .reduce((sum, l) => sum + ((l.totalAmount || 0) - (l.amount || 0)), 0);
 
-    // Sum all collected penalties
-    const collectedPenaltyResult = await Penalty.aggregate([
-      { $match: { status: "collected" } },
-      { $group: { _id: null, total: { $sum: "$amount" } } },
-    ]);
-    const totalCollectedPenalties = collectedPenaltyResult[0]
-      ? collectedPenaltyResult[0].total
-      : 0;
+    // Sum all collected penalties with non-null member
+    const collectedPenalties = await Penalty.find({ status: "collected" }).populate("member");
+    const totalCollectedPenalties = collectedPenalties
+      .filter(p => p.member !== null)
+      .reduce((sum, p) => sum + (p.amount || 0), 0);
 
-    // Sum all paid penalties
-    const paidPenaltyResult = await Penalty.aggregate([
-      { $match: { status: "paid" } },
-      { $group: { _id: null, total: { $sum: "$amount" } } },
-    ]);
-    const totalPaidPenalties = paidPenaltyResult[0]
-      ? paidPenaltyResult[0].total
-      : 0;
+    // Sum all paid penalties with non-null member
+    const paidPenalties = await Penalty.find({ status: "paid" }).populate("member");
+    const totalPaidPenalties = paidPenalties
+      .filter(p => p.member !== null)
+      .reduce((sum, p) => sum + (p.amount || 0), 0);
 
-    // Sum all pending penalties
-    const pendingPenaltyResult = await Penalty.aggregate([
-      { $match: { status: "pending" } },
-      { $group: { _id: null, total: { $sum: "$amount" } } },
-    ]);
-    const totalPendingPenalties = pendingPenaltyResult[0]
-      ? pendingPenaltyResult[0].total
-      : 0;
+    // Sum all pending penalties with non-null member
+    const pendingPenalties = await Penalty.find({ status: "pending" }).populate("member");
+    const totalPendingPenalties = pendingPenalties
+      .filter(p => p.member !== null)
+      .reduce((sum, p) => sum + (p.amount || 0), 0);
 
     // Net available: contributions - approved loans + interest from repaid loans + collected penalties + paid penalties
     const netAvailable =
@@ -419,34 +406,20 @@ const getNetContributions = async (req, res) => {
       totalCollectedPenalties +
       totalPaidPenalties;
 
-    
+    // Sum all interest from approved loans with non-null member
+    const approvedLoansForInterest = await Loan.find({ status: "approved" }).populate("member");
+    const totalInterestFromApprovedLoans = approvedLoansForInterest
+      .filter(l => l.member !== null)
+      .reduce((sum, l) => sum + ((l.totalAmount || 0) - (l.amount || 0)), 0);
 
-    // Sum all interest from approved loans
-    const approvedInterestResult = await Loan.aggregate([
-      { $match: { status: "approved" } },
-      {
-        $group: {
-          _id: null,
-          total: { $sum: { $subtract: ["$totalAmount", "$amount"] } },
-        },
-      },
-    ]);
-    const totalInterestFromApprovedLoans = approvedInterestResult[0]
-      ? approvedInterestResult[0].total
-      : 0;
-
-    // Future balance: netAvailable + interest from approved loans
+    // Future balance: netAvailable + interest from approved loans + pending penalties
     const futureBalance =
       netAvailable + totalInterestFromApprovedLoans + totalPendingPenalties;
 
-    // Total amount to be repaid for approved loans
-    const approvedLoansTotalAmountResult = await Loan.aggregate([
-      { $match: { status: "approved" } },
-      { $group: { _id: null, total: { $sum: "$totalAmount" } } },
-    ]);
-    const totalToBeRepaidOnApprovedLoans = approvedLoansTotalAmountResult[0]
-      ? approvedLoansTotalAmountResult[0].total
-      : 0;
+    // Total amount to be repaid for approved loans with non-null member
+    const totalToBeRepaidOnApprovedLoans = approvedLoansForInterest
+      .filter(l => l.member !== null)
+      .reduce((sum, l) => sum + (l.totalAmount || 0), 0);
 
     // Best future balance: netAvailable + total to be repaid on approved loans + pending penalties
     const bestFutureBalance =

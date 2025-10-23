@@ -424,11 +424,13 @@ const getMemberShares = async (req, res) => {
 
     // Process paid penalties (additional interest earned)
     const paidPenalties = await Penalty.find({ status: "paid" })
-      .select("amount paidDate updatedAt createdAt")
+      .select("amount paidDate updatedAt createdAt member")
+      .populate("member", "_id")
       .lean();
 
     let summedInterestFromPaidPenalties = 0;
     for (const penalty of paidPenalties) {
+      if (!penalty.member) continue;
       const paidDate = penalty.paidDate || penalty.updatedAt || penalty.createdAt;
       const penaltyAmount = penalty.amount || 0;
       if (!paidDate || penaltyAmount <= 0) continue;
@@ -446,13 +448,7 @@ const getMemberShares = async (req, res) => {
       .select("totalAmount amount")
       .lean();
 
-    const pendingPenalties = await Penalty.find({ status: { $ne: "paid" } })
-      .select("amount")
-      .lean();
-
     let summedInterestFromApprovedLoans = 0;
-    
-    // Calculate total interest from approved loans
     for (const loan of approvedLoans) {
       const interestAmount = (loan.totalAmount || 0) - (loan.amount || 0);
       if (interestAmount > 0) {
@@ -460,9 +456,14 @@ const getMemberShares = async (req, res) => {
       }
     }
 
-    // Add pending penalties to interest to be earned
-    const summedPendingPenalties = pendingPenalties.reduce((sum, penalty) => 
-      sum + (penalty.amount || 0), 0);
+    // Only use pending penalties where member is not null
+    const pendingPenalties = await Penalty.find({ status: { $ne: "paid" } })
+      .select("amount member")
+      .populate("member", "_id")
+      .lean();
+
+    const summedPendingPenalties = pendingPenalties.reduce((sum, penalty) =>
+      penalty.member ? sum + (penalty.amount || 0) : sum, 0);
 
     // Total pending interest includes both loan interest and pending penalties
     const totalPendingInterest = summedInterestFromApprovedLoans + summedPendingPenalties;
@@ -504,7 +505,7 @@ const getMemberShares = async (req, res) => {
       summary: {
         totalContributions,
         totalInterest: Math.round((summedInterestFromRepaidLoans + summedInterestFromPaidPenalties) * 100) / 100,
-        totalInterestToBeEarned: Math.round(summedInterestFromApprovedLoans * 100) / 100,
+        totalInterestToBeEarned: Math.round(totalPendingInterest * 100) / 100,
         totalContributors: data.length,
         totalPenaltyInterest: Math.round(summedInterestFromPaidPenalties * 100) / 100,
       },

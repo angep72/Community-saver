@@ -48,6 +48,9 @@ const getAllLoans = async (req, res) => {
       .skip(skip)
       .limit(limit);
 
+    // Exclude loans with null member (e.g., deleted users)
+    const filteredLoans = loans.filter(loan => loan.member !== null);
+
     const total = await Loan.countDocuments(query);
 
     // Calculate summary
@@ -77,7 +80,7 @@ const getAllLoans = async (req, res) => {
     ]);
 
     // Add risk assessment to each loan with debug logs
-    const loansWithRisk = loans.map((loan) => {
+    const loansWithRisk = filteredLoans.map((loan) => {
       let risk = null;
       if (loan.member && loan.member.totalContributions && loan.amount) {
         risk = Math.min(

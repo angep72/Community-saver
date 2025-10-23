@@ -38,12 +38,15 @@ const getAllPenalties = async (req, res) => {
       }
     }
 
-    const penalties = await Penalty.find(query)
+    let penalties = await Penalty.find(query)
       .populate("member", "firstName lastName membershipId")
       .populate("assignedBy", "firstName lastName")
       .populate("waivedBy", "firstName lastName")
       .populate("branch", "name code")
       .sort({ assignedDate: -1 });
+
+    // Filter out penalties where member is null
+    penalties = penalties.filter((p) => p.member !== null);
 
     // Calculate summary
     const summary = await Penalty.aggregate([
