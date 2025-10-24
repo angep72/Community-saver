@@ -1,7 +1,5 @@
 const express = require("express");
 const multer = require("multer");
-const path = require("path");
-const fs = require("fs");
 const mongoose = require("mongoose");
 const { protect, authorize } = require("../middleware/auth");
 const User = require("../models/User");
@@ -11,40 +9,41 @@ sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 const router = express.Router();
 
-// Report metadata schema
+// Report schema - now storing file data in database
 const reportSchema = new mongoose.Schema({
-  filename: String,
   originalname: String,
   uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
   uploadedAt: { type: Date, default: Date.now },
   description: String,
+  fileData: Buffer, // Store the actual file binary data
+  mimetype: String, // Store the file type (e.g., 'application/pdf')
+  size: Number, // Store file size in bytes
 });
+
 const Report = mongoose.models.Report || mongoose.model("Report", reportSchema);
 
-// Multer storage config
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const dir = path.join(__dirname, "../reports");
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir);
-    cb(null, dir);
-  },
-  filename: function (req, file, cb) {
-    const unique = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, unique + "-" + file.originalname);
-  },
+// Use memory storage instead of disk storage
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 16 * 1024 * 1024 // 16MB limit (MongoDB document limit is 16MB)
+  }
 });
-const upload = multer({ storage });
-const uploadMemory = multer({ storage: multer.memoryStorage() });
 
 // Multer error handler middleware
 function multerErrorHandler(err, req, res, next) {
-  if (err instanceof require("multer").MulterError) {
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({
+        status: "error",
+        message: "File size exceeds 16MB limit"
+      });
+    }
     return res.status(400).json({
       status: "error",
-      message:
-        err.message === "LIMIT_UNEXPECTED_FILE"
-          ? "File field name must be 'report'"
-          : err.message,
+      message: err.code === "LIMIT_UNEXPECTED_FILE"
+        ? "File field name must be 'report'"
+        : err.message,
     });
   }
   next(err);
@@ -56,27 +55,34 @@ router.post(
   protect,
   authorize("admin"),
   upload.single("report"),
-  multerErrorHandler, // Add this after multer
+  multerErrorHandler,
   async (req, res) => {
     try {
       if (!req.file) {
-        return res
-          .status(400)
-          .json({
-            status: "error",
-            message: "No file uploaded. Field name must be 'report'.",
-          });
+        return res.status(400).json({
+          status: "error",
+          message: "No file uploaded. Field name must be 'report'.",
+        });
       }
+
+      // Store file data in database
       const report = await Report.create({
-        filename: req.file.filename,
         originalname: req.file.originalname,
         uploadedBy: req.user._id,
         description: req.body.description || "",
+        fileData: req.file.buffer, // Store the file buffer
+        mimetype: req.file.mimetype,
+        size: req.file.size
       });
+
+      // Return report without the large fileData field
+      const reportResponse = report.toObject();
+      delete reportResponse.fileData;
+
       res.status(201).json({
         status: "success",
         message: "Report uploaded successfully",
-        data: { report },
+        data: { report: reportResponse },
       });
     } catch (error) {
       res.status(500).json({
@@ -91,9 +97,12 @@ router.post(
 // List all available reports (all users)
 router.get("/", protect, async (req, res) => {
   try {
+    // Exclude fileData from the list to improve performance
     const reports = await Report.find()
+      .select('-fileData') // Exclude the large binary field
       .populate("uploadedBy", "firstName lastName email")
       .sort({ uploadedAt: -1 });
+    
     res.json({
       status: "success",
       data: { reports },
@@ -112,13 +121,21 @@ router.get("/:id/download", protect, async (req, res) => {
   try {
     const report = await Report.findById(req.params.id);
     if (!report) {
-      return res.status(404).json({ status: "error", message: "Report not found" });
+      return res.status(404).json({ 
+        status: "error", 
+        message: "Report not found" 
+      });
     }
-    const filePath = path.join(__dirname, "../reports", report.filename);
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ status: "error", message: "File not found" });
-    }
-    res.download(filePath, report.originalname);
+
+    // Set appropriate headers
+    res.set({
+      'Content-Type': report.mimetype,
+      'Content-Disposition': `attachment; filename="${report.originalname}"`,
+      'Content-Length': report.size
+    });
+
+    // Send the file buffer
+    res.send(report.fileData);
   } catch (error) {
     res.status(500).json({
       status: "error",
@@ -133,28 +150,35 @@ router.post(
   "/send-pdf",
   protect,
   authorize("admin"),
-  uploadMemory.single("pdf"),
+  upload.single("pdf"),
+  multerErrorHandler,
   async (req, res) => {
     try {
       if (!req.file || !req.file.buffer) {
-        return res.status(400).json({ message: "PDF file is required." });
+        return res.status(400).json({ 
+          message: "PDF file is required." 
+        });
       }
 
       // Check attachment size (SendGrid limit is 20MB)
       if (req.file.size > 20 * 1024 * 1024) {
-        return res.status(400).json({ message: "Attachment exceeds 20MB limit." });
+        return res.status(400).json({ 
+          message: "Attachment exceeds 20MB limit." 
+        });
       }
 
-      // Get all user emails as an array of strings, excluding admins
+      // Get all user emails, excluding admins
       const users = await User.find({ role: { $ne: "admin" } }, "email");
       const emails = users.map((u) => u.email);
+      
       if (emails.length === 0) {
-        
-        return res.status(404).json({ message: "No users found." });
+        return res.status(404).json({ 
+          message: "No users found." 
+        });
       }
 
       const msg = {
-        to: emails, // array of email strings
+        to: emails,
         from: process.env.SENDGRID_VERIFIED_SENDER,
         subject: "Financial Management System Report",
         text: "A new report has been sent from the Financial Management System. Please find the attached PDF.",
@@ -171,12 +195,38 @@ router.post(
 
       await sgMail.sendMultiple(msg);
 
-      res.status(200).json({ message: "Report sent to all users." });
+      res.status(200).json({ 
+        message: "Report sent to all users." 
+      });
     } catch (err) {
       console.error("SendGrid error:", err?.response?.body || err);
-      res.status(500).json({ message: "Failed to send report.", error: err?.response?.body || err.message });
+      res.status(500).json({ 
+        message: "Failed to send report.", 
+        error: err?.response?.body || err.message 
+      });
     }
   }
 );
+
+// Delete all reports (admin only)
+router.delete("/delete-all", protect, authorize("admin"), async (req, res) => {
+  try {
+    const result = await Report.deleteMany({});
+    
+    res.status(200).json({
+      status: "success",
+      message: `Successfully deleted ${result.deletedCount} report(s)`,
+      data: {
+        deletedCount: result.deletedCount
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: "error",
+      message: "Failed to delete reports",
+      error: error.message,
+    });
+  }
+});
 
 module.exports = router;
