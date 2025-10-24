@@ -362,6 +362,23 @@ const getMemberShares = async (req, res) => {
     ]);
     const totalContributions = contribResult[0]?.total || 0;
 
+    // ============================================
+    // OPTIMIZATION: Fetch ALL contributions ONCE with timestamps
+    // ============================================
+    const allContributions = await Contribution.find({
+      memberId: { $in: contributorIds }
+    })
+      .select('memberId amount createdAt')
+      .sort({ createdAt: 1 })
+      .lean();
+
+    // Create a sorted array for efficient lookups
+    const sortedContributions = allContributions.map(c => ({
+      memberId: c.memberId.toString(),
+      amount: c.amount,
+      createdAt: c.createdAt
+    }));
+
     // Maps for interest calculations
     const interestEarnedMap = {};
     const interestToBeEarnedMap = {};
@@ -371,30 +388,27 @@ const getMemberShares = async (req, res) => {
       interestToBeEarnedMap[id] = 0;
     });
 
-    // Helper function for contribution-based allocation
-    const allocateByContribsBefore = async (amount, cutoffDate) => {
+    // ============================================
+    // OPTIMIZED: Helper function using cached data
+    // ============================================
+    const allocateByContribsBeforeOptimized = (amount, cutoffDate) => {
       if (!cutoffDate || amount <= 0) return {};
 
-      const contribs = await Contribution.aggregate([
-        {
-          $match: {
-            memberId: { $in: contributorIds },
-            createdAt: { $lte: cutoffDate },
-          },
-        },
-        { $group: { _id: "$memberId", total: { $sum: "$amount" } } },
-      ]);
-
+      // Calculate totals from cached contributions
       const totals = {};
       let pool = 0;
-      contribs.forEach((c) => {
-        const id = c._id.toString();
-        totals[id] = c.total;
-        pool += c.total;
+
+      sortedContributions.forEach(contrib => {
+        if (contrib.createdAt <= cutoffDate) {
+          const id = contrib.memberId;
+          totals[id] = (totals[id] || 0) + contrib.amount;
+          pool += contrib.amount;
+        }
       });
 
       if (pool <= 0) return {};
 
+      // Calculate allocations
       const allocations = {};
       Object.keys(totals).forEach((id) => {
         allocations[id] = (totals[id] / pool) * amount;
@@ -403,18 +417,40 @@ const getMemberShares = async (req, res) => {
       return allocations;
     };
 
-    // Process repaid loans (interest already earned)
-    const repaidLoans = await Loan.find({ status: "repaid" })
-      .select("totalAmount amount repaidAt updatedAt createdAt")
-      .lean();
+    // ============================================
+    // Fetch all loans and penalties in parallel
+    // ============================================
+    const [repaidLoans, paidPenalties, approvedLoans, pendingPenalties] = await Promise.all([
+      Loan.find({ status: "repaid" })
+        .select("totalAmount amount repaidAt updatedAt createdAt")
+        .lean(),
+      
+      Penalty.find({ status: "paid" })
+        .select("amount paidDate updatedAt createdAt member")
+        .populate("member", "_id")
+        .lean(),
+      
+      Loan.find({ status: "approved" })
+        .select("totalAmount amount")
+        .lean(),
+      
+      Penalty.find({ status: { $ne: "paid" } })
+        .select("amount member")
+        .populate("member", "_id")
+        .lean()
+    ]);
 
+    // ============================================
+    // Process repaid loans (interest already earned)
+    // ============================================
     let summedInterestFromRepaidLoans = 0;
     for (const loan of repaidLoans) {
       const repaidAt = loan.repaidAt || loan.updatedAt || loan.createdAt;
       const interestAmount = (loan.totalAmount || 0) - (loan.amount || 0);
       if (!repaidAt || interestAmount <= 0) continue;
 
-      const allocations = await allocateByContribsBefore(interestAmount, repaidAt);
+      // Use optimized function with cached data
+      const allocations = allocateByContribsBeforeOptimized(interestAmount, repaidAt);
       Object.entries(allocations).forEach(([id, value]) => {
         interestEarnedMap[id] = (interestEarnedMap[id] || 0) + value;
       });
@@ -422,12 +458,9 @@ const getMemberShares = async (req, res) => {
       summedInterestFromRepaidLoans += interestAmount;
     }
 
+    // ============================================
     // Process paid penalties (additional interest earned)
-    const paidPenalties = await Penalty.find({ status: "paid" })
-      .select("amount paidDate updatedAt createdAt member")
-      .populate("member", "_id")
-      .lean();
-
+    // ============================================
     let summedInterestFromPaidPenalties = 0;
     for (const penalty of paidPenalties) {
       if (!penalty.member) continue;
@@ -435,7 +468,8 @@ const getMemberShares = async (req, res) => {
       const penaltyAmount = penalty.amount || 0;
       if (!paidDate || penaltyAmount <= 0) continue;
 
-      const allocations = await allocateByContribsBefore(penaltyAmount, paidDate);
+      // Use optimized function with cached data
+      const allocations = allocateByContribsBeforeOptimized(penaltyAmount, paidDate);
       Object.entries(allocations).forEach(([id, value]) => {
         interestEarnedMap[id] = (interestEarnedMap[id] || 0) + value;
       });
@@ -443,11 +477,9 @@ const getMemberShares = async (req, res) => {
       summedInterestFromPaidPenalties += penaltyAmount;
     }
 
+    // ============================================
     // Process approved loans and pending penalties (interest to be earned)
-    const approvedLoans = await Loan.find({ status: "approved" })
-      .select("totalAmount amount")
-      .lean();
-
+    // ============================================
     let summedInterestFromApprovedLoans = 0;
     for (const loan of approvedLoans) {
       const interestAmount = (loan.totalAmount || 0) - (loan.amount || 0);
@@ -457,11 +489,6 @@ const getMemberShares = async (req, res) => {
     }
 
     // Only use pending penalties where member is not null
-    const pendingPenalties = await Penalty.find({ status: { $ne: "paid" } })
-      .select("amount member")
-      .populate("member", "_id")
-      .lean();
-
     const summedPendingPenalties = pendingPenalties.reduce((sum, penalty) =>
       penalty.member ? sum + (penalty.amount || 0) : sum, 0);
 
@@ -477,7 +504,9 @@ const getMemberShares = async (req, res) => {
       interestToBeEarnedMap[id] = totalPendingInterest * sharePercentage;
     });
 
+    // ============================================
     // Build response data
+    // ============================================
     const data = contributors.map((contributor) => {
       const id = contributor._id.toString();
       const share = totalContributions > 0 
