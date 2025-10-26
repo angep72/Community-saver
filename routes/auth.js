@@ -20,6 +20,23 @@ const {
 const router = express.Router();
 
 /**
+ * Helper function to get the correct frontend URL based on environment
+ */
+const getFrontendUrl = () => {
+  const frontendUrls = (process.env.FRONTEND_URL || "http://localhost:5173")
+    .split(",")
+    .map(url => url.trim());
+  
+  // In production, prefer non-localhost URLs
+  if (process.env.NODE_ENV === "production") {
+    return frontendUrls.find(url => !url.includes("localhost")) || frontendUrls[0];
+  }
+  
+  // In development, prefer localhost
+  return frontendUrls.find(url => url.includes("localhost")) || frontendUrls[0];
+};
+
+/**
  * @swagger
  * tags:
  *   name: Authentication
@@ -91,8 +108,6 @@ const router = express.Router();
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-
-// Generate JWT token
 
 // @route   POST /api/auth/register
 // @desc    Register new user
@@ -196,7 +211,6 @@ router.post("/logout", protect, logoutController);
 // @desc    Get current user profile
 // @access  Private
 router.get("/profile", protect, profileController);
-// Replace your Google OAuth routes in routes/auth.js
 
 // Initiate Google OAuth
 router.get(
@@ -206,28 +220,35 @@ router.get(
   })
 );
 
-// Handle Google OAuth callback
+// Handle Google OAuth callback - FIXED VERSION
 router.get(
   "/google/callback",
   passport.authenticate("google", {
     failureRedirect: (() => {
-      const urls = (process.env.FRONTEND_URL || "http://localhost:3000").split(",");
-      return (urls[0] || "http://localhost:3000") + "/login?error=auth_failed";
+      const frontendUrl = getFrontendUrl();
+      return `${frontendUrl}/login?error=auth_failed`;
     })(),
     session: false,
   }),
   (req, res) => {
     try {
+      const frontendUrl = getFrontendUrl();
+      
+      console.log("🔐 Google OAuth callback - NODE_ENV:", process.env.NODE_ENV);
+      console.log("🌐 Selected frontend URL:", frontendUrl);
+
       if (!req.user) {
         const errorMsg = req.authInfo && req.authInfo.message
           ? req.authInfo.message
           : "User does not have an account.";
-        const urls = (process.env.FRONTEND_URL || "http://localhost:3000").split(",");
+        
+        console.log("❌ OAuth failed:", errorMsg);
         return res.redirect(
-          `${urls[0] || "http://localhost:3000"}/login?error=${encodeURIComponent(errorMsg)}`
+          `${frontendUrl}/login?error=${encodeURIComponent(errorMsg)}`
         );
       }
 
+      // Generate JWT token
       const token = jwt.sign(
         {
           id: req.user._id,
@@ -237,21 +258,18 @@ router.get(
         process.env.JWT_SECRET || "your_jwt_secret_fallback",
         { expiresIn: process.env.JWT_EXPIRE || "7d" }
       );
-      // Pick the correct frontend URL
-      const urls = (process.env.FRONTEND_URL || "http://localhost:3000").split(",");
-      // Optionally, match req.headers.origin to one of the URLs
-      const frontendUrl =
-        urls.find(url => req.headers.origin && req.headers.origin.startsWith(url)) ||
-        urls[0] ||
-        "http://localhost:3000";
-      const redirectUrl = `${frontendUrl}/auth/callback?token=${encodeURIComponent(token)}&role=${req.user.role}`;
 
+      console.log("✅ OAuth successful for:", req.user.email);
+
+      const redirectUrl = `${frontendUrl}/auth/callback?token=${encodeURIComponent(token)}&role=${req.user.role}`;
+      
+      console.log("🔗 Redirecting to:", redirectUrl);
       res.redirect(redirectUrl);
     } catch (error) {
       console.error("❌ OAuth callback error:", error);
-      const urls = (process.env.FRONTEND_URL || "http://localhost:3000").split(",");
+      const frontendUrl = getFrontendUrl();
       res.redirect(
-        `${urls[0] || "http://localhost:3000"}/login?error=callback_error`
+        `${frontendUrl}/login?error=callback_error`
       );
     }
   }
