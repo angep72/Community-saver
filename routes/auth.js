@@ -20,40 +20,31 @@ const {
 const router = express.Router();
 
 /**
- * Helper function to get the correct frontend URL based on the request
- * Checks for returnUrl query param, referer header, or defaults based on environment
+ * Helper function to get the correct frontend URL
  */
-const getFrontendUrl = (req) => {
+const getFrontendUrl = (returnUrl) => {
   const frontendUrls = (process.env.FRONTEND_URL || "http://localhost:5173")
     .split(",")
     .map(url => url.trim());
   
-  // 1. Check for explicit returnUrl query parameter (highest priority)
-  const returnUrl = req.query.returnUrl;
+  // If returnUrl is provided and matches one of our allowed URLs, use it
   if (returnUrl) {
     const matchingUrl = frontendUrls.find(url => returnUrl.startsWith(url));
     if (matchingUrl) {
+      console.log("🎯 Using provided returnUrl:", matchingUrl);
       return matchingUrl;
     }
   }
 
-  // 2. Check referer header to detect where the request came from
-  const referer = req.get('referer') || req.get('referrer');
-  if (referer) {
-    const matchingUrl = frontendUrls.find(url => referer.startsWith(url));
-    if (matchingUrl) {
-
-      return matchingUrl;
-    }
-  }
-
-  // 3. Fallback to environment-based selection
+  // Fallback to environment-based selection
   if (process.env.NODE_ENV === "production") {
     const prodUrl = frontendUrls.find(url => !url.includes("localhost")) || frontendUrls[0];
+    console.log("🎯 Using production default:", prodUrl);
     return prodUrl;
   }
   
   const devUrl = frontendUrls.find(url => url.includes("localhost")) || frontendUrls[0];
+  console.log("🎯 Using development default:", devUrl);
   return devUrl;
 };
 
@@ -233,29 +224,62 @@ router.post("/logout", protect, logoutController);
 // @access  Private
 router.get("/profile", protect, profileController);
 
-// Initiate Google OAuth
+// Initiate Google OAuth - CAPTURES returnUrl in state parameter
 router.get(
   "/google",
-  passport.authenticate("google", {
-    scope: ["profile", "email"],
-  })
+  (req, res, next) => {
+    // Get returnUrl from query parameter
+    const returnUrl = req.query.returnUrl;
+    
+    console.log("🚀 Initiating Google OAuth");
+    console.log("📍 Return URL from frontend:", returnUrl);
+    
+    // Store returnUrl in session state to retrieve after OAuth callback
+    const state = returnUrl ? Buffer.from(returnUrl).toString('base64') : '';
+    
+    passport.authenticate("google", {
+      scope: ["profile", "email"],
+      state: state, // Pass returnUrl through OAuth state
+    })(req, res, next);
+  }
 );
 
-// Handle Google OAuth callback - FIXED VERSION with proper URL detection
+// Handle Google OAuth callback - RETRIEVES returnUrl from state parameter
 router.get(
   "/google/callback",
-  passport.authenticate("google", {
-    failureRedirect: "/auth/google/callback?error=auth_failed",
-    session: false,
-  }),
+  (req, res, next) => {
+    // Decode returnUrl from state parameter
+    const state = req.query.state;
+    let returnUrl = null;
+    
+    if (state) {
+      try {
+        returnUrl = Buffer.from(state, 'base64').toString('utf-8');
+        console.log("📍 Decoded return URL from state:", returnUrl);
+      } catch (e) {
+        console.error("❌ Failed to decode state parameter:", e);
+      }
+    }
+    
+    // Store returnUrl in req for use in the callback handler
+    req.returnUrl = returnUrl;
+    
+    passport.authenticate("google", {
+      failureRedirect: (() => {
+        const frontendUrl = getFrontendUrl(returnUrl);
+        return `${frontendUrl}/login?error=auth_failed`;
+      })(),
+      session: false,
+    })(req, res, next);
+  },
   (req, res) => {
     try {
-      const frontendUrl = getFrontendUrl(req);
+      // Use the returnUrl we stored earlier
+      const frontendUrl = getFrontendUrl(req.returnUrl);
       
       console.log("🔐 Google OAuth callback - NODE_ENV:", process.env.NODE_ENV);
       console.log("🌐 Selected frontend URL:", frontendUrl);
-      console.log("📍 Referer:", req.get('referer'));
-      console.log("🔗 Return URL param:", req.query.returnUrl);
+      console.log("🔗 Return URL from state:", req.returnUrl);
 
       if (!req.user) {
         const errorMsg = req.authInfo && req.authInfo.message
@@ -287,7 +311,7 @@ router.get(
       res.redirect(redirectUrl);
     } catch (error) {
       console.error("❌ OAuth callback error:", error);
-      const frontendUrl = getFrontendUrl(req);
+      const frontendUrl = getFrontendUrl(req.returnUrl);
       res.redirect(
         `${frontendUrl}/login?error=callback_error`
       );
