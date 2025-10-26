@@ -31,7 +31,6 @@ const getFrontendUrl = (returnUrl) => {
   if (returnUrl) {
     const matchingUrl = frontendUrls.find(url => returnUrl.startsWith(url));
     if (matchingUrl) {
-      console.log("🎯 Using provided returnUrl:", matchingUrl);
       return matchingUrl;
     }
   }
@@ -39,12 +38,10 @@ const getFrontendUrl = (returnUrl) => {
   // Fallback to environment-based selection
   if (process.env.NODE_ENV === "production") {
     const prodUrl = frontendUrls.find(url => !url.includes("localhost")) || frontendUrls[0];
-    console.log("🎯 Using production default:", prodUrl);
     return prodUrl;
   }
   
   const devUrl = frontendUrls.find(url => url.includes("localhost")) || frontendUrls[0];
-  console.log("🎯 Using development default:", devUrl);
   return devUrl;
 };
 
@@ -231,9 +228,6 @@ router.get(
     // Get returnUrl from query parameter
     const returnUrl = req.query.returnUrl;
     
-    console.log("🚀 Initiating Google OAuth");
-    console.log("📍 Return URL from frontend:", returnUrl);
-    
     // Store returnUrl in session state to retrieve after OAuth callback
     const state = returnUrl ? Buffer.from(returnUrl).toString('base64') : '';
     
@@ -255,9 +249,8 @@ router.get(
     if (state) {
       try {
         returnUrl = Buffer.from(state, 'base64').toString('utf-8');
-        console.log("📍 Decoded return URL from state:", returnUrl);
       } catch (e) {
-        console.error("❌ Failed to decode state parameter:", e);
+        // Ignore decoding errors
       }
     }
     
@@ -276,17 +269,12 @@ router.get(
     try {
       // Use the returnUrl we stored earlier
       const frontendUrl = getFrontendUrl(req.returnUrl);
-      
-      console.log("🔐 Google OAuth callback - NODE_ENV:", process.env.NODE_ENV);
-      console.log("🌐 Selected frontend URL:", frontendUrl);
-      console.log("🔗 Return URL from state:", req.returnUrl);
 
       if (!req.user) {
         const errorMsg = req.authInfo && req.authInfo.message
           ? req.authInfo.message
           : "User does not have an account.";
         
-        console.log("❌ OAuth failed:", errorMsg);
         return res.redirect(
           `${frontendUrl}/login?error=${encodeURIComponent(errorMsg)}`
         );
@@ -303,14 +291,10 @@ router.get(
         { expiresIn: process.env.JWT_EXPIRE || "7d" }
       );
 
-      console.log("✅ OAuth successful for:", req.user.email);
-
       const redirectUrl = `${frontendUrl}/auth/callback?token=${encodeURIComponent(token)}&role=${req.user.role}`;
       
-      console.log("🔗 Redirecting to:", redirectUrl);
       res.redirect(redirectUrl);
     } catch (error) {
-      console.error("❌ OAuth callback error:", error);
       const frontendUrl = getFrontendUrl(req.returnUrl);
       res.redirect(
         `${frontendUrl}/login?error=callback_error`

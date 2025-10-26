@@ -146,7 +146,6 @@ const loginController = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Login error:', error);
     res.status(500).json({
       status: "error",
       message: "Login failed",
@@ -230,7 +229,6 @@ const forgotPasswordController = async (req, res) => {
       const resetToken = crypto.randomBytes(32).toString("hex");
       const resetTokenExpiry = Date.now() + 60 * 60 * 1000; // 1 hour
 
-      console.log("🔑 Generated reset token for:", email);
 
       // Save token to database - Use findByIdAndUpdate to avoid password hashing
       await User.findByIdAndUpdate(user._id, {
@@ -244,8 +242,7 @@ const forgotPasswordController = async (req, res) => {
       
       // Construct reset URL with proper encoding
       const resetUrl = `${frontendUrl}/reset-password?token=${encodeURIComponent(resetToken)}&email=${encodeURIComponent(email)}`;
-      
-      console.log("🔗 Reset URL generated:", resetUrl);
+
       
       // Email HTML template
       const mailHtml = `
@@ -292,10 +289,8 @@ const forgotPasswordController = async (req, res) => {
         subject: "Reset Your Community Saver Password",
         html: mailHtml,
       });
-      
-      console.log("✅ Password reset email sent successfully to:", user.email);
+
     } else {
-      console.log("⚠️ Password reset requested for non-existent email:", email);
     }
     
     // Always respond with success for security (don't reveal if email exists)
@@ -334,8 +329,6 @@ const resetPasswordController = async (req, res) => {
       });
     }
 
-    console.log("🔄 Password reset attempt for:", email);
-
     // Find user with valid token
     const user = await User.findOne({
       email: email.trim().toLowerCase(),
@@ -344,14 +337,11 @@ const resetPasswordController = async (req, res) => {
     });
 
     if (!user) {
-      console.log("❌ Invalid or expired token for:", email);
       return res.status(400).json({ 
         status: "error",
         message: "Invalid or expired reset token. Please request a new password reset." 
       });
     }
-
-    console.log("✅ Valid token found, updating password for:", email);
 
     // Update password and clear reset token fields
     user.password = newPassword;
@@ -369,14 +359,11 @@ const resetPasswordController = async (req, res) => {
       userAgent: req.get("User-Agent"),
     });
 
-    console.log("✅ Password reset successful for:", email);
-    
     res.status(200).json({ 
       status: "success",
       message: "Password reset successful. You can now log in with your new password." 
     });
   } catch (error) {
-    console.error("❌ Password reset error:", error);
     res.status(500).json({ 
       status: "error",
       message: "Password reset failed. Please try again.", 
