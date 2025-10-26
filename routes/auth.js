@@ -20,20 +20,41 @@ const {
 const router = express.Router();
 
 /**
- * Helper function to get the correct frontend URL based on environment
+ * Helper function to get the correct frontend URL based on the request
+ * Checks for returnUrl query param, referer header, or defaults based on environment
  */
-const getFrontendUrl = () => {
+const getFrontendUrl = (req) => {
   const frontendUrls = (process.env.FRONTEND_URL || "http://localhost:5173")
     .split(",")
     .map(url => url.trim());
   
-  // In production, prefer non-localhost URLs
+  // 1. Check for explicit returnUrl query parameter (highest priority)
+  const returnUrl = req.query.returnUrl;
+  if (returnUrl) {
+    const matchingUrl = frontendUrls.find(url => returnUrl.startsWith(url));
+    if (matchingUrl) {
+      return matchingUrl;
+    }
+  }
+
+  // 2. Check referer header to detect where the request came from
+  const referer = req.get('referer') || req.get('referrer');
+  if (referer) {
+    const matchingUrl = frontendUrls.find(url => referer.startsWith(url));
+    if (matchingUrl) {
+
+      return matchingUrl;
+    }
+  }
+
+  // 3. Fallback to environment-based selection
   if (process.env.NODE_ENV === "production") {
-    return frontendUrls.find(url => !url.includes("localhost")) || frontendUrls[0];
+    const prodUrl = frontendUrls.find(url => !url.includes("localhost")) || frontendUrls[0];
+    return prodUrl;
   }
   
-  // In development, prefer localhost
-  return frontendUrls.find(url => url.includes("localhost")) || frontendUrls[0];
+  const devUrl = frontendUrls.find(url => url.includes("localhost")) || frontendUrls[0];
+  return devUrl;
 };
 
 /**
@@ -220,22 +241,21 @@ router.get(
   })
 );
 
-// Handle Google OAuth callback - FIXED VERSION
+// Handle Google OAuth callback - FIXED VERSION with proper URL detection
 router.get(
   "/google/callback",
   passport.authenticate("google", {
-    failureRedirect: (() => {
-      const frontendUrl = getFrontendUrl();
-      return `${frontendUrl}/login?error=auth_failed`;
-    })(),
+    failureRedirect: "/auth/google/callback?error=auth_failed",
     session: false,
   }),
   (req, res) => {
     try {
-      const frontendUrl = getFrontendUrl();
+      const frontendUrl = getFrontendUrl(req);
       
       console.log("🔐 Google OAuth callback - NODE_ENV:", process.env.NODE_ENV);
       console.log("🌐 Selected frontend URL:", frontendUrl);
+      console.log("📍 Referer:", req.get('referer'));
+      console.log("🔗 Return URL param:", req.query.returnUrl);
 
       if (!req.user) {
         const errorMsg = req.authInfo && req.authInfo.message
@@ -267,7 +287,7 @@ router.get(
       res.redirect(redirectUrl);
     } catch (error) {
       console.error("❌ OAuth callback error:", error);
-      const frontendUrl = getFrontendUrl();
+      const frontendUrl = getFrontendUrl(req);
       res.redirect(
         `${frontendUrl}/login?error=callback_error`
       );
