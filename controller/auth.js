@@ -12,6 +12,39 @@ const generateToken = (id) => {
   });
 };
 
+/**
+ * @swagger
+ * /api/auth/register:
+ *   post:
+ *     summary: Register a new user
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               firstName:
+ *                 type: string
+ *               lastName:
+ *                 type: string
+ *               email:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *               role:
+ *                 type: string
+ *               branch:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: User registered successfully
+ *       400:
+ *         description: User with this email already exists
+ *       500:
+ *         description: Registration failed
+ */
 const registerController = async (req, res) => {
   try {
     const { firstName, lastName, email, password, role, branch } = req.body;
@@ -72,6 +105,33 @@ const registerController = async (req, res) => {
   }
 };
 
+/**
+ * @swagger
+ * /api/auth/login:
+ *   post:
+ *     summary: Login user and get JWT token
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               email:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Login successful
+ *       401:
+ *         description: Invalid credentials or account deactivated
+ *       403:
+ *         description: Account not approved
+ *       500:
+ *         description: Login failed
+ */
 const loginController = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -154,6 +214,18 @@ const loginController = async (req, res) => {
   }
 };
 
+/**
+ * @swagger
+ * /api/auth/logout:
+ *   post:
+ *     summary: Logout user
+ *     tags: [Auth]
+ *     responses:
+ *       200:
+ *         description: Logout successful
+ *       500:
+ *         description: Logout failed
+ */
 const logoutController = async (req, res) => {
   try {
     await AuditLog.create({
@@ -177,6 +249,18 @@ const logoutController = async (req, res) => {
   }
 };
 
+/**
+ * @swagger
+ * /api/auth/profile:
+ *   get:
+ *     summary: Get logged-in user's profile
+ *     tags: [Auth]
+ *     responses:
+ *       200:
+ *         description: User profile data
+ *       500:
+ *         description: Failed to get profile
+ */
 const profileController = async (req, res) => {
   try {
     const user = await User.findById(req.user._id).populate("branch");
@@ -209,7 +293,29 @@ const profileController = async (req, res) => {
   }
 };
 
-// Forgot Password - Fixed to handle multiple frontend URLs and proper encoding
+/**
+ * @swagger
+ * /api/auth/forgot-password:
+ *   post:
+ *     summary: Request password reset link
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               email:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Password reset link sent if email exists
+ *       400:
+ *         description: Email is required
+ *       500:
+ *         description: Failed to process password reset request
+ */
 const forgotPasswordController = async (req, res) => {
   const { email } = req.body;
   
@@ -309,7 +415,33 @@ const forgotPasswordController = async (req, res) => {
   }
 };
 
-// Reset Password - Enhanced with better validation and error handling
+/**
+ * @swagger
+ * /api/auth/reset-password:
+ *   post:
+ *     summary: Reset password using token
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               token:
+ *                 type: string
+ *               newPassword:
+ *                 type: string
+ *               email:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Password reset successful
+ *       400:
+ *         description: Invalid or expired token, or validation error
+ *       500:
+ *         description: Password reset failed
+ */
 const resetPasswordController = async (req, res) => {
   const { token, newPassword, email } = req.body;
   

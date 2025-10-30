@@ -3,6 +3,46 @@ const User = require("../models/User");
 const AuditLog = require("../models/AuditLog");
 const Contribution = require("../models/Contribution");
 
+/**
+ * @swagger
+ * /api/penalties:
+ *   get:
+ *     summary: Get all penalties with filters and summary
+ *     tags: [Penalties]
+ *     parameters:
+ *       - in: query
+ *         name: member
+ *         schema:
+ *           type: string
+ *         description: Filter by member ID
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *         description: Filter by penalty status
+ *       - in: query
+ *         name: reason
+ *         schema:
+ *           type: string
+ *         description: Filter by penalty reason
+ *       - in: query
+ *         name: fromDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter penalties assigned after this date
+ *       - in: query
+ *         name: toDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter penalties assigned before this date
+ *     responses:
+ *       200:
+ *         description: List of penalties and summary
+ *       500:
+ *         description: Failed to get penalties
+ */
 const getAllPenalties = async (req, res) => {
   try {
     let query = {};
@@ -94,6 +134,29 @@ const getAllPenalties = async (req, res) => {
     });
   }
 };
+/**
+ * @swagger
+ * /api/penalties/{id}:
+ *   get:
+ *     summary: Get a single penalty by ID
+ *     tags: [Penalties]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Penalty ID
+ *     responses:
+ *       200:
+ *         description: Penalty details
+ *       404:
+ *         description: Penalty not found
+ *       403:
+ *         description: Access denied
+ *       500:
+ *         description: Failed to get penalty
+ */
 const getSinglePenalty = async (req, res) => {
   try {
     const penalty = await Penalty.findById(req.params.id)
@@ -143,6 +206,38 @@ const getSinglePenalty = async (req, res) => {
   }
 };
 
+/**
+ * @swagger
+ * /api/penalties:
+ *   post:
+ *     summary: Assign a new penalty to a member
+ *     tags: [Penalties]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               member:
+ *                 type: string
+ *               amount:
+ *                 type: number
+ *               reason:
+ *                 type: string
+ *               assignedDate:
+ *                 type: string
+ *                 format: date
+ *     responses:
+ *       201:
+ *         description: Penalty assigned successfully
+ *       404:
+ *         description: Member not found
+ *       403:
+ *         description: Access denied
+ *       500:
+ *         description: Failed to assign penalty
+ */
 const createPenality = async (req, res) => {
   try {
     // Verify member exists and belongs to the right branch
@@ -207,6 +302,31 @@ const createPenality = async (req, res) => {
   }
 };
 
+/**
+ * @swagger
+ * /api/penalties/{id}/pay:
+ *   put:
+ *     summary: Mark a penalty as paid
+ *     tags: [Penalties]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Penalty ID
+ *     responses:
+ *       200:
+ *         description: Penalty marked as paid
+ *       404:
+ *         description: Penalty not found
+ *       400:
+ *         description: Penalty is not pending
+ *       403:
+ *         description: Access denied
+ *       500:
+ *         description: Failed to process penalty payment
+ */
 const payPenalty = async (req, res) => {
   try {
     const penalty = await Penalty.findById(req.params.id)
@@ -288,7 +408,18 @@ const payPenalty = async (req, res) => {
     });
   }
 };
-// Get total penalties collected
+/**
+ * @swagger
+ * /api/penalties/total-collected:
+ *   get:
+ *     summary: Get total penalties collected (paid)
+ *     tags: [Penalties]
+ *     responses:
+ *       200:
+ *         description: Total penalties collected
+ *       500:
+ *         description: Failed to get total penalties collected
+ */
 const getTotalPenaltiesCollected = async (req, res) => {
   try {
     // Only count penalties with status 'paid'
@@ -310,6 +441,29 @@ const getTotalPenaltiesCollected = async (req, res) => {
   }
 };
 
+/**
+ * @swagger
+ * /api/penalties/{id}/waive:
+ *   put:
+ *     summary: Waive a penalty by ID
+ *     tags: [Penalties]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Penalty ID
+ *     responses:
+ *       200:
+ *         description: Penalty waived successfully
+ *       404:
+ *         description: Penalty not found
+ *       400:
+ *         description: Penalty is not pending
+ *       500:
+ *         description: Failed to waive penalty
+ */
 const waivePenalty = async (req, res) => {
   try {
     const penalty = await Penalty.findById(req.params.id).populate("member");

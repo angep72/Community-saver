@@ -4,6 +4,24 @@ const Contribution = require('../models/Contribution');
 const Loan = require('../models/Loan');
 const Penalty = require('../models/Penalty');
 
+/**
+ * @swagger
+ * /api/dashboard/admin:
+ *   get:
+ *     summary: Get admin dashboard statistics
+ *     tags: [Dashboard]
+ *     parameters:
+ *       - in: query
+ *         name: range
+ *         schema:
+ *           type: integer
+ *         description: Number of days for recent stats (default 30)
+ *     responses:
+ *       200:
+ *         description: Admin dashboard data
+ *       500:
+ *         description: Failed to get admin dashboard data
+ */
 const adminDashboard = async (req, res) => {
   try {
     const timeRange = req.query.range || '30'; // days
@@ -169,6 +187,24 @@ const adminDashboard = async (req, res) => {
   }
 }
 
+/**
+ * @swagger
+ * /api/dashboard/branch:
+ *   get:
+ *     summary: Get branch lead dashboard statistics
+ *     tags: [Dashboard]
+ *     parameters:
+ *       - in: query
+ *         name: range
+ *         schema:
+ *           type: integer
+ *         description: Number of days for recent stats (default 30)
+ *     responses:
+ *       200:
+ *         description: Branch dashboard data
+ *       500:
+ *         description: Failed to get branch lead dashboard data
+ */
 const branchDashboard = async (req, res) => {
   try {
     const timeRange = req.query.range || '30'; // days
@@ -312,6 +348,24 @@ const branchDashboard = async (req, res) => {
   }
 }
 
+/**
+ * @swagger
+ * /api/dashboard/member:
+ *   get:
+ *     summary: Get member dashboard statistics
+ *     tags: [Dashboard]
+ *     parameters:
+ *       - in: query
+ *         name: range
+ *         schema:
+ *           type: integer
+ *         description: Number of days for recent stats (default 30)
+ *     responses:
+ *       200:
+ *         description: Member dashboard data
+ *       500:
+ *         description: Failed to get member dashboard data
+ */
 const memberDashboard = async (req, res) => {
   try {
     const timeRange = req.query.range || '30'; // days

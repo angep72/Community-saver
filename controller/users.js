@@ -4,6 +4,44 @@ const Contribution = require("../models/Contribution");
 const Loan = require("../models/Loan");
 const Penalty = require("../models/Penalty"); // Import Penalty model
 
+/**
+ * @swagger
+ * /api/users:
+ *   get:
+ *     summary: Get all users with pagination and filters
+ *     tags: [Users]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *         description: Page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *         description: Number of users per page
+ *       - in: query
+ *         name: role
+ *         schema:
+ *           type: string
+ *         description: Filter by user role
+ *       - in: query
+ *         name: isActive
+ *         schema:
+ *           type: boolean
+ *         description: Filter by active status
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search by name or email
+ *     responses:
+ *       200:
+ *         description: List of users
+ *       500:
+ *         description: Failed to get users
+ */
 const getAllUsers = async (req, res) => {
   try {
     // Add caching headers for read-only endpoint
@@ -86,6 +124,29 @@ const getAllUsers = async (req, res) => {
   }
 };
 
+/**
+ * @swagger
+ * /api/users/{id}:
+ *   get:
+ *     summary: Get a single user by ID
+ *     tags: [Users]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: User ID
+ *     responses:
+ *       200:
+ *         description: User details
+ *       404:
+ *         description: User not found
+ *       403:
+ *         description: Access denied
+ *       500:
+ *         description: Failed to get user
+ */
 const getOneUser = async (req, res) => {
   try {
     // Add caching headers for read-only endpoint
@@ -136,6 +197,39 @@ const getOneUser = async (req, res) => {
   }
 };
 
+/**
+ * @swagger
+ * /api/users:
+ *   post:
+ *     summary: Create a new user
+ *     tags: [Users]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               firstName:
+ *                 type: string
+ *               lastName:
+ *                 type: string
+ *               email:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *               role:
+ *                 type: string
+ *               branch:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: User created successfully
+ *       400:
+ *         description: User with this email already exists
+ *       500:
+ *         description: Failed to create user
+ */
 const createUser = async (req, res) => {
   try {
     const user = await User.create(req.body);
@@ -171,6 +265,36 @@ const createUser = async (req, res) => {
     });
   }
 };
+
+/**
+ * @swagger
+ * /api/users/{id}:
+ *   put:
+ *     summary: Edit a user by ID
+ *     tags: [Users]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: User ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200:
+ *         description: User updated successfully
+ *       403:
+ *         description: Access denied
+ *       404:
+ *         description: User not found
+ *       500:
+ *         description: Failed to update user
+ */
 const editUser = async (req, res) => {
   try {
     // Check permissions
@@ -227,6 +351,30 @@ const editUser = async (req, res) => {
     });
   }
 };
+
+/**
+ * @swagger
+ * /api/users/{id}:
+ *   delete:
+ *     summary: Delete a user by ID
+ *     tags: [Users]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: User ID
+ *     responses:
+ *       200:
+ *         description: User deleted successfully
+ *       400:
+ *         description: Cannot delete user due to active loans or contributions
+ *       404:
+ *         description: User not found
+ *       500:
+ *         description: Failed to delete user
+ */
 const deleteUser = async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
@@ -297,7 +445,18 @@ const deleteUser = async (req, res) => {
   }
 };
 
-// Endpoint to calculate user shares
+/**
+ * @swagger
+ * /api/users/shares:
+ *   get:
+ *     summary: Get user shares (percentage of total contributions)
+ *     tags: [Users]
+ *     responses:
+ *       200:
+ *         description: User shares data
+ *       500:
+ *         description: Failed to calculate user shares
+ */
 const getUserShares = async (req, res) => {
   try {
     // Add caching headers for read-only endpoint with computed data
@@ -339,7 +498,18 @@ const getUserShares = async (req, res) => {
   }
 };
 
-// Get member shares and potential interest (including branch leads)
+/**
+ * @swagger
+ * /api/users/member-shares:
+ *   get:
+ *     summary: Get member shares and interest (including branch leads)
+ *     tags: [Users]
+ *     responses:
+ *       200:
+ *         description: Member shares and interest data
+ *       500:
+ *         description: Failed to calculate member shares
+ */
 const getMemberShares = async (req, res) => {
   try {
     // Add caching headers for read-only endpoint with heavy computations
@@ -549,6 +719,27 @@ const getMemberShares = async (req, res) => {
   }
 };
 
+/**
+ * @swagger
+ * /api/users/{id}/report:
+ *   get:
+ *     summary: Get a detailed report for a user
+ *     tags: [Users]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: User ID
+ *     responses:
+ *       200:
+ *         description: User report data
+ *       404:
+ *         description: User not found
+ *       500:
+ *         description: Failed to generate user report
+ */
 const getUserReport = async (req, res) => {
   try {
     const userId = req.params.id;

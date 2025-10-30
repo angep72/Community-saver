@@ -2,6 +2,24 @@ const Branch = require("../models/Branch");
 const AuditLog = require("../models/AuditLog");
 const User = require("../models/User");
 
+/**
+ * @swagger
+ * /api/branches:
+ *   get:
+ *     summary: Get all branches (with optional filters)
+ *     tags: [Branches]
+ *     parameters:
+ *       - in: query
+ *         name: isActive
+ *         schema:
+ *           type: boolean
+ *         description: Filter by active status
+ *     responses:
+ *       200:
+ *         description: List of branches
+ *       500:
+ *         description: Failed to get branches
+ */
 const getAllBranch = async (req, res) => {
   try {
     let query = {};
@@ -33,6 +51,29 @@ const getAllBranch = async (req, res) => {
   }
 };
 
+/**
+ * @swagger
+ * /api/branches/{id}:
+ *   get:
+ *     summary: Get a single branch by ID
+ *     tags: [Branches]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Branch ID
+ *     responses:
+ *       200:
+ *         description: Branch details
+ *       404:
+ *         description: Branch not found
+ *       403:
+ *         description: Access denied
+ *       500:
+ *         description: Failed to get branch
+ */
 const getOneBranch = async (req, res) => {
   try {
     const branch = await Branch.findById(req.params.id)
@@ -70,9 +111,35 @@ const getOneBranch = async (req, res) => {
   }
 };
 
+/**
+ * @swagger
+ * /api/branches:
+ *   post:
+ *     summary: Create a new branch
+ *     tags: [Branches]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *               code:
+ *                 type: string
+ *               branchLead:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Branch created successfully
+ *       400:
+ *         description: Branch with this name or code already exists
+ *       500:
+ *         description: Failed to create branch
+ */
 const createBranch = async (req, res) => {
   try {
-
     const branch = await Branch.create(req.body);
 
     // Log the action
@@ -107,6 +174,33 @@ const createBranch = async (req, res) => {
   }
 };
 
+/**
+ * @swagger
+ * /api/branches/{id}:
+ *   put:
+ *     summary: Update a branch by ID
+ *     tags: [Branches]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Branch ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200:
+ *         description: Branch updated successfully
+ *       404:
+ *         description: Branch not found
+ *       500:
+ *         description: Failed to update branch
+ */
 const updateBranch = async (req, res) => {
   try {
     const branch = await Branch.findByIdAndUpdate(req.params.id, req.body, {
@@ -146,6 +240,27 @@ const updateBranch = async (req, res) => {
   }
 };
 
+/**
+ * @swagger
+ * /api/branches/{id}:
+ *   delete:
+ *     summary: Deactivate a branch by ID (soft delete)
+ *     tags: [Branches]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Branch ID
+ *     responses:
+ *       200:
+ *         description: Branch deactivated successfully
+ *       404:
+ *         description: Branch not found
+ *       500:
+ *         description: Failed to delete branch
+ */
 const deletingBranch = async (req, res) => {
   try {
     const branch = await Branch.findByIdAndUpdate(

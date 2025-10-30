@@ -4,6 +4,56 @@ const AuditLog = require("../models/AuditLog");
 const Loan = require("../models/Loan");
 const Penalty = require("../models/Penalty"); 
 
+/**
+ * @swagger
+ * /api/contributions:
+ *   get:
+ *     summary: Get all contributions with filters and pagination
+ *     tags: [Contributions]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *         description: Page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *         description: Number of contributions per page
+ *       - in: query
+ *         name: memberId
+ *         schema:
+ *           type: string
+ *         description: Filter by member ID
+ *       - in: query
+ *         name: contributionType
+ *         schema:
+ *           type: string
+ *         description: Filter by contribution type
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *         description: Filter by contribution status
+ *       - in: query
+ *         name: fromDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter contributions after this date
+ *       - in: query
+ *         name: toDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter contributions before this date
+ *     responses:
+ *       200:
+ *         description: List of contributions and summary
+ *       500:
+ *         description: Failed to get contributions
+ */
 const getAllContribution = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -97,6 +147,29 @@ const getAllContribution = async (req, res) => {
   }
 };
 
+/**
+ * @swagger
+ * /api/contributions/{id}:
+ *   get:
+ *     summary: Get a single contribution by ID
+ *     tags: [Contributions]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Contribution ID
+ *     responses:
+ *       200:
+ *         description: Contribution details
+ *       404:
+ *         description: Contribution not found
+ *       403:
+ *         description: Access denied
+ *       500:
+ *         description: Failed to get contribution
+ */
 const getOneContribution = async (req, res) => {
   try {
     const contribution = await Contribution.findById(req.params.id)
@@ -146,6 +219,36 @@ const getOneContribution = async (req, res) => {
   }
 };
 
+/**
+ * @swagger
+ * /api/contributions:
+ *   post:
+ *     summary: Add a new contribution
+ *     tags: [Contributions]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               memberId:
+ *                 type: string
+ *               amount:
+ *                 type: number
+ *               contributionType:
+ *                 type: string
+ *               contributionDate:
+ *                 type: string
+ *                 format: date
+ *     responses:
+ *       201:
+ *         description: Contribution added successfully
+ *       404:
+ *         description: Member not found
+ *       500:
+ *         description: Failed to add contribution
+ */
 const createContribution = async (req, res) => {
   try {
     // Verify member exists and belongs to the right branch
@@ -235,6 +338,35 @@ const createContribution = async (req, res) => {
   }
 };
 
+/**
+ * @swagger
+ * /api/contributions/{id}:
+ *   put:
+ *     summary: Update a contribution by ID
+ *     tags: [Contributions]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Contribution ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200:
+ *         description: Contribution updated successfully
+ *       404:
+ *         description: Contribution not found
+ *       403:
+ *         description: Access denied
+ *       500:
+ *         description: Failed to update contribution
+ */
 const updatingContribution = async (req, res) => {
   try {
     const contribution = await Contribution.findById(req.params.id).populate(
@@ -297,6 +429,28 @@ const updatingContribution = async (req, res) => {
     });
   }
 };
+
+/**
+ * @swagger
+ * /api/contributions/{id}:
+ *   delete:
+ *     summary: Delete a contribution by ID
+ *     tags: [Contributions]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Contribution ID
+ *     responses:
+ *       200:
+ *         description: Contribution deleted successfully
+ *       404:
+ *         description: Contribution not found
+ *       500:
+ *         description: Failed to delete contribution
+ */
 const deletingContribution = async (req, res) => {
   try {
     const contribution = await Contribution.findByIdAndDelete(req.params.id);
@@ -335,6 +489,18 @@ const deletingContribution = async (req, res) => {
   }
 };
 
+/**
+ * @swagger
+ * /api/contributions/total:
+ *   get:
+ *     summary: Get total contributions amount
+ *     tags: [Contributions]
+ *     responses:
+ *       200:
+ *         description: Total contributions amount
+ *       500:
+ *         description: Failed to calculate total contributions
+ */
 const getTotalContributions = async (req, res) => {
   try {
     const result = await Contribution.aggregate([
@@ -354,7 +520,18 @@ const getTotalContributions = async (req, res) => {
   }
 };
 
-// Get the sum of all contributions minus total approved loans
+/**
+ * @swagger
+ * /api/contributions/net:
+ *   get:
+ *     summary: Get net contributions (contributions minus approved loans plus interest and penalties)
+ *     tags: [Contributions]
+ *     responses:
+ *       200:
+ *         description: Net contributions and related financial summary
+ *       500:
+ *         description: Failed to calculate net contributions
+ */
 const getNetContributions = async (req, res) => {
   try {
     // Only include contributions from active users (memberId not null)

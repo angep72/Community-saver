@@ -1,5 +1,51 @@
 const Loan = require("../models/Loan");
 const AuditLog = require("../models/AuditLog");
+
+/**
+ * @swagger
+ * /api/loans:
+ *   get:
+ *     summary: Get all loans with filters, pagination, and risk assessment
+ *     tags: [Loans]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *         description: Page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *         description: Number of loans per page
+ *       - in: query
+ *         name: member
+ *         schema:
+ *           type: string
+ *         description: Filter by member ID
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *         description: Filter by loan status
+ *       - in: query
+ *         name: fromDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter loans applied after this date
+ *       - in: query
+ *         name: toDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter loans applied before this date
+ *     responses:
+ *       200:
+ *         description: List of loans and summary
+ *       500:
+ *         description: Failed to get loans
+ */
 const getAllLoans = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -125,6 +171,29 @@ const getAllLoans = async (req, res) => {
   }
 };
 
+/**
+ * @swagger
+ * /api/loans/{id}:
+ *   get:
+ *     summary: Get a single loan by ID
+ *     tags: [Loans]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Loan ID
+ *     responses:
+ *       200:
+ *         description: Loan details
+ *       404:
+ *         description: Loan not found
+ *       403:
+ *         description: Access denied
+ *       500:
+ *         description: Failed to get loan
+ */
 const getSingleLoan = async (req, res) => {
   try {
     const loan = await Loan.findById(req.params.id)
@@ -178,6 +247,33 @@ const getSingleLoan = async (req, res) => {
   }
 };
 
+/**
+ * @swagger
+ * /api/loans/request:
+ *   post:
+ *     summary: Request a new loan
+ *     tags: [Loans]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               amount:
+ *                 type: number
+ *               duration:
+ *                 type: number
+ *               purpose:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Loan request submitted successfully
+ *       400:
+ *         description: Already has a pending or approved loan
+ *       500:
+ *         description: Failed to request loan
+ */
 const requestingLoan = async (req, res) => {
   try {
     // Check if member has any pending loans
@@ -242,6 +338,44 @@ const requestingLoan = async (req, res) => {
     });
   }
 };
+
+/**
+ * @swagger
+ * /api/loans/{id}/approve:
+ *   put:
+ *     summary: Approve or reject a loan
+ *     tags: [Loans]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Loan ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: [approved, rejected]
+ *               interestRate:
+ *                 type: number
+ *               rejectionReason:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Loan approved or rejected successfully
+ *       404:
+ *         description: Loan not found
+ *       400:
+ *         description: Loan already processed
+ *       500:
+ *         description: Failed to process loan
+ */
 const approvingLoan = async (req, res) => {
   try {
     const { status, interestRate, rejectionReason } = req.body;
@@ -325,6 +459,29 @@ const approvingLoan = async (req, res) => {
   }
 };
 
+/**
+ * @swagger
+ * /api/loans/{id}/repay:
+ *   put:
+ *     summary: Mark a loan as repaid/disbursed
+ *     tags: [Loans]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Loan ID
+ *     responses:
+ *       200:
+ *         description: Loan disbursed successfully
+ *       404:
+ *         description: Loan not found
+ *       400:
+ *         description: Loan must be approved before disbursement
+ *       500:
+ *         description: Failed to disburse loan
+ */
 const repaymentLoan = async (req, res) => {
   try {
     const loan = await Loan.findById(req.params.id).populate({
