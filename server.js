@@ -47,103 +47,101 @@ app.use(helmet());
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps, curl, server-side requests)
+      // Allow requests with no origin (server-to-server, curl, mobile apps)
       if (!origin) return callback(null, true);
 
-      // Helper: normalize entries (URLs or origins or wildcard domains) -> origin or wildcard string
-      const normalizeEntry = (entry) => {
+      const normalize = (entry) => {
         if (!entry) return null;
         entry = entry.trim();
-        // If entry contains wildcard like *.example.com keep as-is
         if (entry.startsWith("*.")) return entry.toLowerCase();
-        // If looks like protocol+host or host:port, try to create URL and return origin
         try {
-          // If entry lacks protocol, assume https for safety when parsing hostname only
-          const maybeUrl = entry.match(/^https?:\/\//) ? entry : `https://${entry}`;
-          const u = new URL(maybeUrl);
+          const maybe = entry.match(/^https?:\/\//) ? entry : `https://${entry}`;
+          const u = new URL(maybe);
           return `${u.protocol}//${u.hostname}${u.port ? `:${u.port}` : ""}`.toLowerCase();
         } catch (e) {
-          // fallback: return entry lowercased (could be hostname or wildcard)
           return entry.toLowerCase();
         }
       };
 
-      // Defaults
-      const defaultOrigins = [
+      // defaults + env-configured lists
+      const defaults = [
         "http://localhost:5173",
         "https://lovely-nougat-b6139b.netlify.app",
         "https://communitysaver.netlify.app",
-        "http://localhost:5000",
       ];
 
-      // Collect env lists (comma separated)
-      const envList = (process.env.CORS_ALLOWED_ORIGINS || "").split(",").map((s) => s.trim()).filter(Boolean);
-      const swaggerList = (process.env.SWAGGER_UI_URL || "").split(",").map((s) => s.trim()).filter(Boolean);
+      const fromEnv = (v) =>
+        (v || "")
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
 
-      // Normalize all entries (strip paths -> origins)
-      const normalized = new Set();
-      [...defaultOrigins, ...envList, ...swaggerList].forEach((item) => {
-        const n = normalizeEntry(item);
-        if (n) normalized.add(n);
+      const envOrigins = [
+        ...fromEnv(process.env.CORS_ALLOWED_ORIGINS),
+        ...fromEnv(process.env.FRONTEND_URL),
+        ...fromEnv(process.env.SWAGGER_UI_URL),
+        ...(process.env.BACKEND_URL ? [process.env.BACKEND_URL] : []),
+      ];
+
+      const normalizedSet = new Set();
+      [...defaults, ...envOrigins].forEach((it) => {
+        const n = normalize(it);
+        if (n) normalizedSet.add(n);
       });
+      const allowed = Array.from(normalizedSet);
 
-      const allowedOrigins = Array.from(normalized);
-      // Log allowed origins once for troubleshooting (only in dev or when env var present)
-      if (process.env.NODE_ENV === "development" || process.env.DEBUG_CORS === "true") {
-        console.info("CORS allowed origins:", allowedOrigins);
-      }
-
-      // Normalize incoming origin for comparison
-      let incomingOrigin = origin.toLowerCase();
-      let incomingHostname = "";
+      // quick allow: any localhost or 127.0.0.1 (any port)
       try {
-        const u = new URL(incomingOrigin);
-        incomingHostname = u.hostname.toLowerCase();
-        incomingOrigin = `${u.protocol}//${u.hostname}${u.port ? `:${u.port}` : ""}`;
+        const u = new URL(origin);
+        const host = u.hostname.toLowerCase();
+        if (host === "localhost" || host === "127.0.0.1") {
+          return callback(null, true);
+        }
       } catch (e) {
-        // leave incomingOrigin as-is
+        // continue
       }
 
-      // Exact match
-      if (allowedOrigins.includes(incomingOrigin) || allowedOrigins.includes(incomingOrigin.replace(/\/$/, ""))) {
+      // exact origin match (origin will be echoed by cors when true)
+      const incoming = origin.toLowerCase().replace(/\/+$/, "");
+      if (allowed.includes(incoming) || allowed.includes(incoming.replace(/\/$/, ""))) {
         return callback(null, true);
       }
 
-      // Match by hostname if allowedOrigins contains hostname-only entries
-      if (allowedOrigins.includes(incomingHostname)) {
-        return callback(null, true);
-      }
+      // hostname-only match (allowed may contain hostname without protocol)
+      let incomingHost = "";
+      try {
+        incomingHost = new URL(origin).hostname.toLowerCase();
+      } catch (e) {}
+      if (allowed.includes(incomingHost)) return callback(null, true);
 
-      // Wildcard match support: allowed entry like *.example.com
-      const wildcardMatch = allowedOrigins.some((a) => a.startsWith("*.") && incomingHostname.endsWith(a.slice(1)));
-      if (wildcardMatch) return callback(null, true);
+      // wildcard match support (*.example.com)
+      const wildcardOk = allowed.some((a) => a.startsWith("*.") && incomingHost.endsWith(a.slice(1)));
+      if (wildcardOk) return callback(null, true);
 
-      // Allow common hosting previews (Render, Netlify, Vercel)
+      // allow common preview hosts
       if (
-        incomingHostname.endsWith(".render.com") ||
-        incomingHostname.endsWith(".netlify.app") ||
-        incomingHostname.endsWith(".vercel.app")
+        incomingHost.endsWith(".render.com") ||
+        incomingHost.endsWith(".netlify.app") ||
+        incomingHost.endsWith(".vercel.app")
       ) {
         return callback(null, true);
       }
 
-      // Allow same-origin when server and swagger are on same host (SITE_URL env may be set)
-      const siteUrl = (process.env.SITE_URL || process.env.BACKEND_URL || process.env.HOSTNAME || "").trim();
-      if (siteUrl) {
+      // allow same-origin when BACKEND_URL matches origin
+      const site = (process.env.BACKEND_URL || process.env.SITE_URL || "").trim();
+      if (site) {
         try {
-          const u = new URL(siteUrl.match(/^https?:\/\//) ? siteUrl : `https://${siteUrl}`);
-          const siteOrigin = `${u.protocol}//${u.hostname}${u.port ? `:${u.port}` : ""}`.toLowerCase();
-          if (incomingOrigin.startsWith(siteOrigin)) return callback(null, true);
+          const s = normalize(site);
+          if (s && incoming.startsWith(s)) return callback(null, true);
         } catch (e) {}
       }
 
-      // In non-production environments you may allow all origins for convenience
+      // dev helper: allow all if explicitly enabled
       if (process.env.NODE_ENV !== "production" && process.env.CORS_ALLOW_ALL === "true") {
-        console.warn(`CORS permissive mode enabled: allowing origin ${origin}`);
+        console.warn(`CORS permissive mode enabled - allowing origin ${origin}`);
         return callback(null, true);
       }
 
-      // Blocked
       console.warn(`CORS blocked origin: ${origin}`);
       return callback(new Error("Not allowed by CORS"));
     },
@@ -177,6 +175,47 @@ app.use("/api/penalties", penaltyRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/branches", branchRoutes);
 app.use("/api/reports", reportsRoutes);
+
+// Ensure swagger UI uses the backend URL from env to avoid CORS cross-origin issues
+(() => {
+  const port = process.env.PORT || 3000;
+  const rawBackendUrl = (process.env.BACKEND_URL || `http://localhost:${port}`).trim();
+  const normalizedBackendUrl = rawBackendUrl.replace(/\/+$/, "");
+
+  try {
+    if (swaggerSpecs && typeof swaggerSpecs === "object") {
+      // determine whether the spec paths include /api prefix
+      const paths = swaggerSpecs.paths || {};
+      const pathKeys = Object.keys(paths);
+      const hasApiPrefixedPath = pathKeys.some((p) => p.startsWith("/api/"));
+
+      // target server URL: if spec paths are NOT prefixed with /api, append /api so Swagger requests hit /api/* routes
+      const serverUrl = hasApiPrefixedPath ? normalizedBackendUrl : `${normalizedBackendUrl}/api`;
+
+      // set OpenAPI v3 servers
+      if (!swaggerSpecs.servers) {
+        swaggerSpecs.servers = [{ url: serverUrl }];
+      } else {
+        swaggerSpecs.servers[0] = { url: serverUrl };
+      }
+
+      // Backwards-compatibility for Swagger 2.0 (host/basePath)
+      if (!swaggerSpecs.host) {
+        try {
+          const u = new URL(serverUrl);
+          swaggerSpecs.host = u.host; // hostname:port
+          // set basePath only when spec paths are not already prefixed with /api
+          swaggerSpecs.basePath = hasApiPrefixedPath ? (u.pathname === "/" ? "" : u.pathname) : `${u.pathname.replace(/\/+$/, "") || ""}/api`;
+        } catch (e) {
+          // ignore parse errors
+        }
+      }
+    }
+    console.info("Swagger server URL set to:", swaggerSpecs.servers && swaggerSpecs.servers[0] && swaggerSpecs.servers[0].url);
+  } catch (e) {
+    console.warn("Failed to normalize/set swagger server URL:", e.message || e);
+  }
+})();
 
 // API Documentation
 app.use(
