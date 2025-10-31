@@ -46,9 +46,27 @@ connectDB();
 app.use(helmet());
 app.use(
   cors({
-    origin: function (origin, callback) {
-      // Allow requests with no origin (like mobile apps or curl requests)
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps, curl, server-side requests)
       if (!origin) return callback(null, true);
+
+      // Helper: normalize entries (URLs or origins or wildcard domains) -> origin or wildcard string
+      const normalizeEntry = (entry) => {
+        if (!entry) return null;
+        entry = entry.trim();
+        // If entry contains wildcard like *.example.com keep as-is
+        if (entry.startsWith("*.")) return entry.toLowerCase();
+        // If looks like protocol+host or host:port, try to create URL and return origin
+        try {
+          // If entry lacks protocol, assume https for safety when parsing hostname only
+          const maybeUrl = entry.match(/^https?:\/\//) ? entry : `https://${entry}`;
+          const u = new URL(maybeUrl);
+          return `${u.protocol}//${u.hostname}${u.port ? `:${u.port}` : ""}`.toLowerCase();
+        } catch (e) {
+          // fallback: return entry lowercased (could be hostname or wildcard)
+          return entry.toLowerCase();
+        }
+      };
 
       // Defaults
       const defaultOrigins = [
@@ -58,21 +76,79 @@ app.use(
         "http://localhost:5000",
       ];
 
-      // Read SWAGGER_UI_URL (comma separated) and merge with defaults
-      const swaggerOrigins = (process.env.SWAGGER_UI_URL || "")
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
+      // Collect env lists (comma separated)
+      const envList = (process.env.CORS_ALLOWED_ORIGINS || "").split(",").map((s) => s.trim()).filter(Boolean);
+      const swaggerList = (process.env.SWAGGER_UI_URL || "").split(",").map((s) => s.trim()).filter(Boolean);
 
-      const allowedOrigins = Array.from(new Set([...defaultOrigins, ...swaggerOrigins]));
+      // Normalize all entries (strip paths -> origins)
+      const normalized = new Set();
+      [...defaultOrigins, ...envList, ...swaggerList].forEach((item) => {
+        const n = normalizeEntry(item);
+        if (n) normalized.add(n);
+      });
 
-      if (allowedOrigins.includes(origin)) {
+      const allowedOrigins = Array.from(normalized);
+      // Log allowed origins once for troubleshooting (only in dev or when env var present)
+      if (process.env.NODE_ENV === "development" || process.env.DEBUG_CORS === "true") {
+        console.info("CORS allowed origins:", allowedOrigins);
+      }
+
+      // Normalize incoming origin for comparison
+      let incomingOrigin = origin.toLowerCase();
+      let incomingHostname = "";
+      try {
+        const u = new URL(incomingOrigin);
+        incomingHostname = u.hostname.toLowerCase();
+        incomingOrigin = `${u.protocol}//${u.hostname}${u.port ? `:${u.port}` : ""}`;
+      } catch (e) {
+        // leave incomingOrigin as-is
+      }
+
+      // Exact match
+      if (allowedOrigins.includes(incomingOrigin) || allowedOrigins.includes(incomingOrigin.replace(/\/$/, ""))) {
         return callback(null, true);
       }
 
-      callback(new Error("Not allowed by CORS"));
+      // Match by hostname if allowedOrigins contains hostname-only entries
+      if (allowedOrigins.includes(incomingHostname)) {
+        return callback(null, true);
+      }
+
+      // Wildcard match support: allowed entry like *.example.com
+      const wildcardMatch = allowedOrigins.some((a) => a.startsWith("*.") && incomingHostname.endsWith(a.slice(1)));
+      if (wildcardMatch) return callback(null, true);
+
+      // Allow common hosting previews (Render, Netlify, Vercel)
+      if (
+        incomingHostname.endsWith(".render.com") ||
+        incomingHostname.endsWith(".netlify.app") ||
+        incomingHostname.endsWith(".vercel.app")
+      ) {
+        return callback(null, true);
+      }
+
+      // Allow same-origin when server and swagger are on same host (SITE_URL env may be set)
+      const siteUrl = (process.env.SITE_URL || process.env.BACKEND_URL || process.env.HOSTNAME || "").trim();
+      if (siteUrl) {
+        try {
+          const u = new URL(siteUrl.match(/^https?:\/\//) ? siteUrl : `https://${siteUrl}`);
+          const siteOrigin = `${u.protocol}//${u.hostname}${u.port ? `:${u.port}` : ""}`.toLowerCase();
+          if (incomingOrigin.startsWith(siteOrigin)) return callback(null, true);
+        } catch (e) {}
+      }
+
+      // In non-production environments you may allow all origins for convenience
+      if (process.env.NODE_ENV !== "production" && process.env.CORS_ALLOW_ALL === "true") {
+        console.warn(`CORS permissive mode enabled: allowing origin ${origin}`);
+        return callback(null, true);
+      }
+
+      // Blocked
+      console.warn(`CORS blocked origin: ${origin}`);
+      return callback(new Error("Not allowed by CORS"));
     },
     credentials: true,
+    optionsSuccessStatus: 200,
   })
 );
 
