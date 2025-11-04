@@ -1,0 +1,47 @@
+version: "3.8"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: community-saver:latest
+    container_name: community-saver-app
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "${PORT:-5000}:5000"
+    depends_on:
+      - mongo
+    volumes:
+      - ./:/app            # optional for local development (remove for production)
+    command: ["node", "server.js"]
+
+  mongo:
+    image: mongo:6.0
+    container_name: community-saver-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: example
+    volumes:
+      - mongo_data:/data/db
+
+  mongo-express:
+    image: mongo-express:1.0.0
+    container_name: community-saver-mongo-express
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: root
+      ME_CONFIG_MONGODB_ADMINPASSWORD: example
+      ME_CONFIG_MONGODB_SERVER: mongo
+    depends_on:
+      - mongo
+
+volumes:
+  mongo_data:

@@ -2,7 +2,7 @@ const Contribution = require("../models/Contribution");
 const User = require("../models/User");
 const AuditLog = require("../models/AuditLog");
 const Loan = require("../models/Loan");
-const Penalty = require("../models/Penalty"); 
+const Penalty = require("../models/Penalty");
 
 /**
  * @swagger

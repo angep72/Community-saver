@@ -15,7 +15,7 @@ const auditLogSchema = new mongoose.Schema({
       'add_contribution', 'update_contribution', 'delete_contribution',
       'request_loan', 'approve_loan', 'reject_loan', 'update_loan',
       'assign_penalty', 'pay_penalty', 'waive_penalty',
-      'create_branch', 'update_branch', 'delete_branch','disburse_loan'
+      'create_branch', 'update_branch', 'delete_branch', 'disburse_loan'
     ]
   },
   resource: {

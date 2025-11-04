@@ -22,7 +22,7 @@ const loanSchema = new mongoose.Schema({
     required: [true, 'Loan duration is required'],
     min: [1, 'Duration must be at least 1 month']
   },
-  
+
   status: {
     type: String,
     enum: {
@@ -62,8 +62,8 @@ const loanSchema = new mongoose.Schema({
     default: 0
   },
   branch: {
-    type:String,
-    required:false 
+    type: String,
+    required: false
   },
   rejectionReason: {
     type: String,
@@ -74,12 +74,12 @@ const loanSchema = new mongoose.Schema({
 });
 
 // Calculate total amount with interest before saving
-loanSchema.pre('save', function(next) {
+loanSchema.pre('save', function (next) {
   if (this.isModified('amount') || this.isModified('interestRate') || this.isModified('duration')) {
-    const interest = (this.amount * this.interestRate * this.duration) /100;
+    const interest = (this.amount * this.interestRate * this.duration) / 100;
     this.totalAmount = this.amount + interest;
     this.remainingAmount = this.totalAmount - this.amountPaid;
-    
+
     if (this.disbursedDate && !this.dueDate) {
       this.dueDate = new Date(this.disbursedDate.getTime() + (this.duration * 30 * 24 * 60 * 60 * 1000));
     }
@@ -88,25 +88,25 @@ loanSchema.pre('save', function(next) {
 });
 
 // Update user's total loans after saving
-loanSchema.post('save', async function() {
+loanSchema.post('save', async function () {
   if (this.status === 'approved' || this.status === 'disbursed') {
     await this.constructor.updateUserLoans(this.member);
   }
 });
 
 // Static method to calculate user's total loans
-loanSchema.statics.updateUserLoans = async function(userId) {
+loanSchema.statics.updateUserLoans = async function (userId) {
   const User = mongoose.model('User');
   const stats = await this.aggregate([
-    { 
-      $match: { 
-        member: userId, 
+    {
+      $match: {
+        member: userId,
         status: { $in: ['approved', 'disbursed'] }
-      } 
+      }
     },
     { $group: { _id: null, total: { $sum: '$amount' } } }
   ]);
-  
+
   const total = stats[0] ? stats[0].total : 0;
   await User.findByIdAndUpdate(userId, { totalLoans: total });
 };

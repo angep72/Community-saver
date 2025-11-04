@@ -67,11 +67,11 @@ const registerController = async (req, res) => {
       password,
       role: role || "member",
       branch,
-      status: "pending", 
+      status: "pending",
     });
 
     const token = generateToken(user._id);
-  
+
     await AuditLog.create({
       user: user._id,
       action: "register",
@@ -135,11 +135,11 @@ const registerController = async (req, res) => {
 const loginController = async (req, res) => {
   try {
     const { email, password } = req.body;
-    
+
     const user = await User.findOne({ email })
       .select("+password")
       .populate("branch");
-    
+
     if (!user) {
       return res.status(401).json({
         status: "error",
@@ -318,18 +318,18 @@ const profileController = async (req, res) => {
  */
 const forgotPasswordController = async (req, res) => {
   const { email } = req.body;
-  
+
   try {
     // Validate email input
     if (!email || !email.trim()) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         status: "error",
-        message: "Email is required" 
+        message: "Email is required"
       });
     }
 
     const user = await User.findOne({ email: email.trim().toLowerCase() });
-    
+
     if (user) {
       // Generate secure reset token
       const resetToken = crypto.randomBytes(32).toString("hex");
@@ -345,11 +345,11 @@ const forgotPasswordController = async (req, res) => {
       // Handle multiple frontend URLs properly
       const frontendUrls = (process.env.FRONTEND_URL || "http://localhost:5173").split(",");
       const frontendUrl = frontendUrls[0].trim();
-      
+
       // Construct reset URL with proper encoding
       const resetUrl = `${frontendUrl}/reset-password?token=${encodeURIComponent(resetToken)}&email=${encodeURIComponent(email)}`;
 
-      
+
       // Email HTML template
       const mailHtml = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px;">
@@ -398,19 +398,19 @@ const forgotPasswordController = async (req, res) => {
 
     } else {
     }
-    
+
     // Always respond with success for security (don't reveal if email exists)
-    res.status(200).json({ 
+    res.status(200).json({
       status: "success",
-      message: "If an account exists with that email, a password reset link has been sent." 
+      message: "If an account exists with that email, a password reset link has been sent."
     });
   } catch (error) {
     console.error("❌ Forgot password error:", error);
-    
+
     // Don't expose internal errors to the user
-    res.status(500).json({ 
+    res.status(500).json({
       status: "error",
-      message: "Failed to process password reset request. Please try again later." 
+      message: "Failed to process password reset request. Please try again later."
     });
   }
 };
@@ -444,20 +444,20 @@ const forgotPasswordController = async (req, res) => {
  */
 const resetPasswordController = async (req, res) => {
   const { token, newPassword, email } = req.body;
-  
+
   try {
     // Validate inputs
     if (!token || !newPassword || !email) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         status: "error",
-        message: "Token, email, and new password are required" 
+        message: "Token, email, and new password are required"
       });
     }
 
     if (newPassword.length < 6) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         status: "error",
-        message: "Password must be at least 6 characters long" 
+        message: "Password must be at least 6 characters long"
       });
     }
 
@@ -469,9 +469,9 @@ const resetPasswordController = async (req, res) => {
     });
 
     if (!user) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         status: "error",
-        message: "Invalid or expired reset token. Please request a new password reset." 
+        message: "Invalid or expired reset token. Please request a new password reset."
       });
     }
 
@@ -491,15 +491,15 @@ const resetPasswordController = async (req, res) => {
       userAgent: req.get("User-Agent"),
     });
 
-    res.status(200).json({ 
+    res.status(200).json({
       status: "success",
-      message: "Password reset successful. You can now log in with your new password." 
+      message: "Password reset successful. You can now log in with your new password."
     });
   } catch (error) {
-    res.status(500).json({ 
+    res.status(500).json({
       status: "error",
-      message: "Password reset failed. Please try again.", 
-      error: error.message 
+      message: "Password reset failed. Please try again.",
+      error: error.message
     });
   }
 };

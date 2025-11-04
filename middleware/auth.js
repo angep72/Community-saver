@@ -20,10 +20,10 @@ exports.protect = async (req, res, next) => {
 
     // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    
+
     // Get user from token
     const user = await User.findById(decoded.id).populate('branch');
-    
+
     if (!user) {
       return res.status(401).json({
         status: 'error',
@@ -78,12 +78,12 @@ exports.authorize = (...roles) => {
 exports.checkBranchAccess = async (req, res, next) => {
   try {
     const { branchId } = req.params;
-    
+
     // Admin can access all branches
     if (req.user.role === 'admin') {
       return next();
     }
-    
+
     // Branch lead can only access their branch
     if (req.user.role === 'branch_lead') {
       if (req.user.branch._id.toString() !== branchId) {
@@ -93,7 +93,7 @@ exports.checkBranchAccess = async (req, res, next) => {
         });
       }
     }
-    
+
     // Members can only access their own branch
     if (req.user.role === 'member') {
       if (req.user.branch._id.toString() !== branchId) {
@@ -103,7 +103,7 @@ exports.checkBranchAccess = async (req, res, next) => {
         });
       }
     }
-    
+
     next();
   } catch (error) {
     res.status(500).json({

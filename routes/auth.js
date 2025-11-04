@@ -26,7 +26,7 @@ const getFrontendUrl = (returnUrl) => {
   const frontendUrls = (process.env.FRONTEND_URL || "http://localhost:5173")
     .split(",")
     .map(url => url.trim());
-  
+
   // If returnUrl is provided and matches one of our allowed URLs, use it
   if (returnUrl) {
     const matchingUrl = frontendUrls.find(url => returnUrl.startsWith(url));
@@ -40,7 +40,7 @@ const getFrontendUrl = (returnUrl) => {
     const prodUrl = frontendUrls.find(url => !url.includes("localhost")) || frontendUrls[0];
     return prodUrl;
   }
-  
+
   const devUrl = frontendUrls.find(url => url.includes("localhost")) || frontendUrls[0];
   return devUrl;
 };
@@ -227,10 +227,10 @@ router.get(
   (req, res, next) => {
     // Get returnUrl from query parameter
     const returnUrl = req.query.returnUrl;
-    
+
     // Store returnUrl in session state to retrieve after OAuth callback
     const state = returnUrl ? Buffer.from(returnUrl).toString('base64') : '';
-    
+
     passport.authenticate("google", {
       scope: ["profile", "email"],
       state: state, // Pass returnUrl through OAuth state
@@ -245,7 +245,7 @@ router.get(
     // Decode returnUrl from state parameter
     const state = req.query.state;
     let returnUrl = null;
-    
+
     if (state) {
       try {
         returnUrl = Buffer.from(state, 'base64').toString('utf-8');
@@ -253,10 +253,10 @@ router.get(
         // Ignore decoding errors
       }
     }
-    
+
     // Store returnUrl in req for use in the callback handler
     req.returnUrl = returnUrl;
-    
+
     passport.authenticate("google", {
       failureRedirect: (() => {
         const frontendUrl = getFrontendUrl(returnUrl);
@@ -274,7 +274,7 @@ router.get(
         const errorMsg = req.authInfo && req.authInfo.message
           ? req.authInfo.message
           : "User does not have an account.";
-        
+
         return res.redirect(
           `${frontendUrl}/login?error=${encodeURIComponent(errorMsg)}`
         );
@@ -292,7 +292,7 @@ router.get(
       );
 
       const redirectUrl = `${frontendUrl}/auth/callback?token=${encodeURIComponent(token)}&role=${req.user.role}`;
-      
+
       res.redirect(redirectUrl);
     } catch (error) {
       const frontendUrl = getFrontendUrl(req.returnUrl);

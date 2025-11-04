@@ -594,16 +594,16 @@ const getMemberShares = async (req, res) => {
       Loan.find({ status: "repaid" })
         .select("totalAmount amount repaidAt updatedAt createdAt")
         .lean(),
-      
+
       Penalty.find({ status: "paid" })
         .select("amount paidDate updatedAt createdAt member")
         .populate("member", "_id")
         .lean(),
-      
+
       Loan.find({ status: "approved" })
         .select("totalAmount amount")
         .lean(),
-      
+
       Penalty.find({ status: { $ne: "paid" } })
         .select("amount member")
         .populate("member", "_id")
@@ -668,8 +668,8 @@ const getMemberShares = async (req, res) => {
     // Distribute the total pending interest based on contribution shares
     contributors.forEach(contributor => {
       const id = contributor._id.toString();
-      const sharePercentage = totalContributions > 0 
-        ? (contributor.totalContributions || 0) / totalContributions 
+      const sharePercentage = totalContributions > 0
+        ? (contributor.totalContributions || 0) / totalContributions
         : 0;
       interestToBeEarnedMap[id] = totalPendingInterest * sharePercentage;
     });
@@ -679,8 +679,8 @@ const getMemberShares = async (req, res) => {
     // ============================================
     const data = contributors.map((contributor) => {
       const id = contributor._id.toString();
-      const share = totalContributions > 0 
-        ? (contributor.totalContributions || 0) / totalContributions 
+      const share = totalContributions > 0
+        ? (contributor.totalContributions || 0) / totalContributions
         : 0;
 
       return {
@@ -825,8 +825,8 @@ const getUserReport = async (req, res) => {
       investmentSummary: {
         totalInterestEarned: interestEarned,
         pendingInterest: interestToBeEarned,
-        sharePercentage: totalContributions > 0 
-          ? ((totalContributions / await getTotalContributions()) * 100).toFixed(2) 
+        sharePercentage: totalContributions > 0
+          ? ((totalContributions / await getTotalContributions()) * 100).toFixed(2)
           : '0.00',
       }
     };

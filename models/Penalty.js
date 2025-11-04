@@ -48,32 +48,32 @@ const penaltySchema = new mongoose.Schema({
     ref: 'User'
   },
   branch: {
-    type:String,
-   
-    required:false
+    type: String,
+
+    required: false
   }
 }, {
   timestamps: true
 });
 
 // Update user's total penalties after saving
-penaltySchema.post('save', async function() {
+penaltySchema.post('save', async function () {
   await this.constructor.updateUserPenalties(this.member);
 });
 
 // Update user's total penalties after deletion
-penaltySchema.post('remove', async function() {
+penaltySchema.post('remove', async function () {
   await this.constructor.updateUserPenalties(this.member);
 });
 
 // Static method to calculate user's total unpaid penalties
-penaltySchema.statics.updateUserPenalties = async function(userId) {
+penaltySchema.statics.updateUserPenalties = async function (userId) {
   const User = mongoose.model('User');
   const stats = await this.aggregate([
     { $match: { member: userId, status: 'pending' } },
     { $group: { _id: null, total: { $sum: '$amount' } } }
   ]);
-  
+
   const total = stats[0] ? stats[0].total : 0;
   await User.findByIdAndUpdate(userId, { totalPenalties: total });
 };

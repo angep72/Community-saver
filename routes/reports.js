@@ -23,7 +23,7 @@ const reportSchema = new mongoose.Schema({
 const Report = mongoose.models.Report || mongoose.model("Report", reportSchema);
 
 // Use memory storage instead of disk storage
-const upload = multer({ 
+const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 16 * 1024 * 1024 // 16MB limit (MongoDB document limit is 16MB)
@@ -102,7 +102,7 @@ router.get("/", protect, async (req, res) => {
       .select('-fileData') // Exclude the large binary field
       .populate("uploadedBy", "firstName lastName email")
       .sort({ uploadedAt: -1 });
-    
+
     res.json({
       status: "success",
       data: { reports },
@@ -121,9 +121,9 @@ router.get("/:id/download", protect, async (req, res) => {
   try {
     const report = await Report.findById(req.params.id);
     if (!report) {
-      return res.status(404).json({ 
-        status: "error", 
-        message: "Report not found" 
+      return res.status(404).json({
+        status: "error",
+        message: "Report not found"
       });
     }
 
@@ -155,25 +155,25 @@ router.post(
   async (req, res) => {
     try {
       if (!req.file || !req.file.buffer) {
-        return res.status(400).json({ 
-          message: "PDF file is required." 
+        return res.status(400).json({
+          message: "PDF file is required."
         });
       }
 
       // Check attachment size (SendGrid limit is 20MB)
       if (req.file.size > 20 * 1024 * 1024) {
-        return res.status(400).json({ 
-          message: "Attachment exceeds 20MB limit." 
+        return res.status(400).json({
+          message: "Attachment exceeds 20MB limit."
         });
       }
 
       // Get all user emails, excluding admins
       const users = await User.find({ role: { $ne: "admin" } }, "email");
       const emails = users.map((u) => u.email);
-      
+
       if (emails.length === 0) {
-        return res.status(404).json({ 
-          message: "No users found." 
+        return res.status(404).json({
+          message: "No users found."
         });
       }
 
@@ -195,14 +195,14 @@ router.post(
 
       await sgMail.sendMultiple(msg);
 
-      res.status(200).json({ 
-        message: "Report sent to all users." 
+      res.status(200).json({
+        message: "Report sent to all users."
       });
     } catch (err) {
       console.error("SendGrid error:", err?.response?.body || err);
-      res.status(500).json({ 
-        message: "Failed to send report.", 
-        error: err?.response?.body || err.message 
+      res.status(500).json({
+        message: "Failed to send report.",
+        error: err?.response?.body || err.message
       });
     }
   }
@@ -212,7 +212,7 @@ router.post(
 router.delete("/delete-all", protect, authorize("admin"), async (req, res) => {
   try {
     const result = await Report.deleteMany({});
-    
+
     res.status(200).json({
       status: "success",
       message: `Successfully deleted ${result.deletedCount} report(s)`,

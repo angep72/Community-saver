@@ -41,8 +41,8 @@ const adminDashboard = async (req, res) => {
     ]);
 
     const totalUsers = await User.countDocuments();
-    const newUsers = await User.countDocuments({ 
-      createdAt: { $gte: startDate } 
+    const newUsers = await User.countDocuments({
+      createdAt: { $gte: startDate }
     });
 
     // Contribution statistics
@@ -229,11 +229,11 @@ const branchDashboard = async (req, res) => {
 
     // Branch contribution statistics
     const contributionStats = await Contribution.aggregate([
-      { 
-        $match: { 
-          branch: branchId, 
-          status: 'confirmed' 
-        } 
+      {
+        $match: {
+          branch: branchId,
+          status: 'confirmed'
+        }
       },
       {
         $group: {
@@ -293,17 +293,17 @@ const branchDashboard = async (req, res) => {
       .limit(10);
 
     // Recent branch activities
-    const recentContributions = await Contribution.find({ 
-      branch: branchId, 
-      contributionDate: { $gte: startDate } 
+    const recentContributions = await Contribution.find({
+      branch: branchId,
+      contributionDate: { $gte: startDate }
     })
       .populate('member', 'firstName lastName membershipId')
       .sort({ contributionDate: -1 })
       .limit(10);
 
-    const recentLoans = await Loan.find({ 
-      branch: branchId, 
-      appliedDate: { $gte: startDate } 
+    const recentLoans = await Loan.find({
+      branch: branchId,
+      appliedDate: { $gte: startDate }
     })
       .populate('member', 'firstName lastName membershipId')
       .sort({ appliedDate: -1 })
@@ -415,9 +415,9 @@ const memberDashboard = async (req, res) => {
       }
     ]);
 
-    const activeLoan = await Loan.findOne({ 
-      member: memberId, 
-      status: { $in: ['approved', 'disbursed'] } 
+    const activeLoan = await Loan.findOne({
+      member: memberId,
+      status: { $in: ['approved', 'disbursed'] }
     }).sort({ appliedDate: -1 });
 
     // Member's penalty status
@@ -433,7 +433,7 @@ const memberDashboard = async (req, res) => {
     ]);
 
     // Recent contributions
-    const recentContributions = await Contribution.find({ 
+    const recentContributions = await Contribution.find({
       member: memberId,
       contributionDate: { $gte: startDate }
     })
@@ -443,14 +443,14 @@ const memberDashboard = async (req, res) => {
 
     // Contribution history by month (last 12 months)
     const monthlyContributions = await Contribution.aggregate([
-      { 
-        $match: { 
-          member: memberId, 
+      {
+        $match: {
+          member: memberId,
           status: 'confirmed',
-          contributionDate: { 
-            $gte: new Date(new Date().setMonth(new Date().getMonth() - 12)) 
+          contributionDate: {
+            $gte: new Date(new Date().setMonth(new Date().getMonth() - 12))
           }
-        } 
+        }
       },
       {
         $group: {
@@ -503,5 +503,5 @@ const memberDashboard = async (req, res) => {
     });
   }
 }
- 
-module.exports = {adminDashboard, branchDashboard, memberDashboard}
+
+module.exports = { adminDashboard, branchDashboard, memberDashboard }

@@ -39,7 +39,7 @@ router.use(protect);
 // @route   GET /api/penalties
 // @desc    Get penalties
 // @access  Admin (all), Branch Lead (branch), Member (own)
-router.get("/total-penalties",getTotalPenaltiesCollected)
+router.get("/total-penalties", getTotalPenaltiesCollected)
 
 router.get("/", getAllPenalties);
 
