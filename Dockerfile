@@ -10,9 +10,9 @@ COPY package*.json ./
 
 # Install production dependencies
 RUN if [ -f package-lock.json ]; then \
-      npm ci --only=production --ignore-scripts; \
+    npm ci --only=production --ignore-scripts; \
     else \
-      npm install --only=production --ignore-scripts; \
+    npm install --only=production --ignore-scripts; \
     fi && \
     npm cache clean --force
 
@@ -53,7 +53,7 @@ EXPOSE 5000
 
 # Healthcheck
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD curl -f http://localhost:${PORT}/api/health || exit 1
+    CMD curl -f http://localhost:${PORT}/api/health || exit 1
 
 # Use dumb-init and start
 ENTRYPOINT ["dumb-init", "--"]
