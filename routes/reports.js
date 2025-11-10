@@ -65,7 +65,7 @@ router.post(
         });
       }
 
-      // Store file data in database
+      // Store file data in database (no branch saved)
       const report = await Report.create({
         originalname: req.file.originalname,
         uploadedBy: req.user._id,
@@ -75,9 +75,12 @@ router.post(
         size: req.file.size
       });
 
-      // Return report without the large fileData field
+      // Return report without the large fileData field and without any branch value
       const reportResponse = report.toObject();
       delete reportResponse.fileData;
+      // ensure branch removed if present
+      if (reportResponse.branch) delete reportResponse.branch;
+      if (reportResponse.uploadedBy && reportResponse.uploadedBy.branch) delete reportResponse.uploadedBy.branch;
 
       res.status(201).json({
         status: "success",
@@ -98,10 +101,18 @@ router.post(
 router.get("/", protect, async (req, res) => {
   try {
     // Exclude fileData from the list to improve performance
-    const reports = await Report.find()
+    let reports = await Report.find()
       .select('-fileData') // Exclude the large binary field
       .populate("uploadedBy", "firstName lastName email")
-      .sort({ uploadedAt: -1 });
+      .sort({ uploadedAt: -1 })
+      .lean();
+
+    // Remove branch value from each report (and from uploadedBy if present)
+    reports = reports.map(r => {
+      if (r.branch) delete r.branch;
+      if (r.uploadedBy && r.uploadedBy.branch) delete r.uploadedBy.branch;
+      return r;
+    });
 
     res.json({
       status: "success",

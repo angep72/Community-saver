@@ -1,5 +1,11 @@
 const Loan = require("../models/Loan");
 const AuditLog = require("../models/AuditLog");
+const User = require("../models/User");
+const sgMail = require("@sendgrid/mail");
+const fs = require("fs");
+const path = require("path");
+
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 /**
  * @swagger
@@ -305,7 +311,6 @@ const requestingLoan = async (req, res) => {
     await loan.populate("branch", "name code");
 
     // Update user's totalLoans
-    const User = require("../models/User");
     const user = await User.findById(req.user._id);
     if (user) {
       // Sum all loans for this user
@@ -548,7 +553,217 @@ const repaymentLoan = async (req, res) => {
   }
 };
 
+/**
+ * @swagger
+ * /api/loans/{id}/send-approval-email:
+ *   post:
+ *     summary: Send loan approval email
+ *     tags: [Loans]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Loan ID
+ *     responses:
+ *       200:
+ *         description: Loan approval email sent
+ *       404:
+ *         description: Loan not found
+ *       400:
+ *         description: Loan is not approved or email sending failed
+ *       500:
+ *         description: Failed to send email
+ */
+const sendLoanApprovalEmail = async (req, res) => {
+  try {
+    const loanId = req.params.id;
+    const loan = await Loan.findById(loanId)
+      .populate({
+        path: "member",
+        select: "firstName lastName email membershipId",
+      })
+      .populate("branch", "name code group"); // include 'group' field
 
+    if (!loan) {
+      return res.status(404).json({ status: "error", message: "Loan not found" });
+    }
+
+    if (loan.status !== "approved") {
+      return res.status(400).json({ status: "error", message: "Loan is not approved" });
+    }
+
+    const member = loan.member;
+    if (!member || !member.email) {
+      return res.status(400).json({ status: "error", message: "Member email not available" });
+    }
+
+    const fullName = `${member.firstName || ""} ${member.lastName || ""}`.trim() || "Member";
+    const loanAmount = loan.amount || 0;
+    const interest = loan.interestRate || 0;
+    const duration = loan.duration || 0;
+    const totalAmount = loan.totalAmount || loanAmount;
+    const approvedDate = new Date(loan.approvedDate || Date.now()).toLocaleString();
+
+    // Prefer branch.group, fallback to branch.name
+    const groupName = loan.branch?.group || loan.branch?.name || "N/A";
+
+    // Log group and user info
+    console.info("Sending loan approval email - context:", {
+      loanId: loan._id?.toString?.() || loan._id,
+      groupName,
+      member: {
+        id: member._id?.toString?.() || member._id,
+        email: member.email,
+        firstName: member.firstName,
+        lastName: member.lastName,
+        membershipId: member.membershipId,
+      },
+      loan: {
+        amount: loanAmount,
+        interest,
+        duration,
+        totalAmount,
+      },
+      approvedDate,
+    });
+
+    // Attachment: loan agreement PDF (optional)
+    let attachments = [];
+    try {
+      const pdfPath = path.join(__dirname, "..", "resources", "loan_agreement.pdf");
+      if (fs.existsSync(pdfPath)) {
+        const pdfBuffer = fs.readFileSync(pdfPath);
+        attachments.push({
+          content: pdfBuffer.toString("base64"),
+          filename: "loan_agreement.pdf",
+          type: "application/pdf",
+          disposition: "attachment",
+        });
+        console.info("Attached loan agreement PDF:", pdfPath);
+      } else {
+        console.warn("Loan agreement PDF not found at:", pdfPath);
+      }
+    } catch (attachErr) {
+      console.warn("Error reading loan agreement PDF:", attachErr);
+    }
+
+    const html = `
+      <div style="font-family: Arial, sans-serif; color: #1f2937; max-width: 600px; margin: auto;">
+        <h2 style="color: #0f766e; margin-bottom: 0.5rem;">Your Loan Has Been Approved</h2>
+        <p>Hello ${fullName},</p>
+        <p style="color:#374151;">
+          Good news — your loan application has been <strong style="color:#065f46;">approved</strong>. Below are the details:
+        </p>
+
+        <table style="width:100%; border-collapse: collapse; margin-top: 12px;">
+          <tr>
+            <td style="padding:8px; border:1px solid #e5e7eb; font-weight:600;">Loan Amount</td>
+            <td style="padding:8px; border:1px solid #e5e7eb;">${loanAmount.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px; border:1px solid #e5e7eb; font-weight:600;">Interest Rate (%)</td>
+            <td style="padding:8px; border:1px solid #e5e7eb;">${interest}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px; border:1px solid #e5e7eb; font-weight:600;">Duration (months)</td>
+            <td style="padding:8px; border:1px solid #e5e7eb;">${duration}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px; border:1px solid #e5e7eb; font-weight:600;">Total Amount to Repay</td>
+            <td style="padding:8px; border:1px solid #e5e7eb;">${totalAmount.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px; border:1px solid #e5e7eb; font-weight:600;">Approved Date</td>
+            <td style="padding:8px; border:1px solid #e5e7eb;">${approvedDate}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px; border:1px solid #e5e7eb; font-weight:600;">Group</td>
+            <td style="padding:8px; border:1px solid #e5e7eb;">${groupName}</td>
+          </tr>
+        </table>
+
+        <p style="margin-top: 16px; color:#374151;">
+          Please fill and sign the attached loan agreement PDF, then send the signed copy back to this email address as a scanned PDF or clear photo. Once we receive the signed agreement we will proceed with disbursement.
+        </p>
+
+        <p style="margin-top: 16px; color:#374151;">
+          If you have questions about repayment schedules or need assistance, reply to this email or contact your branch lead.
+        </p>
+
+        <p style="margin-top: 20px;">
+          Regards,<br/>
+          <strong>Community Saver Team</strong>
+        </p>
+
+        <hr style="border:none; border-top:1px solid #e6eef0; margin-top:20px;" />
+        <small style="color:#9ca3af;">This is an autogenerated message — do not reply directly.</small>
+      </div>
+    `;
+
+    const msg = {
+      to: member.email,
+      from: process.env.SENDGRID_VERIFIED_SENDER,
+      subject: "Loan Approved — Community Saver",
+      text: `Hello ${fullName}, your loan for ${loanAmount} has been approved. Please sign and return the attached loan agreement.`,
+      html,
+      ...(attachments.length ? { attachments } : {}),
+    };
+
+    try {
+      await sgMail.send(msg);
+      console.info(`Loan approval email sent to ${member.email} for loan ${loan._id}`);
+    } catch (sendErr) {
+      console.error("Failed to send loan approval email:", sendErr?.response?.body || sendErr);
+      return res.status(200).json({
+        status: "success",
+        message: "Loan is approved (email send failed).",
+        emailError: sendErr?.response?.body || sendErr.message || String(sendErr)
+      });
+    }
+
+    return res.status(200).json({
+      status: "success",
+      message: "Loan approval email sent to user.",
+    });
+  } catch (err) {
+    console.error("sendLoanApprovalEmail error:", err);
+    return res.status(500).json({ status: "error", message: "Failed to send approval email", error: err.message });
+  }
+};
+
+// New: serve the static loan agreement PDF for frontend downloads (no loan id required)
+const downloadLoanAgreement = (req, res) => {
+  try {
+    const pdfPath = path.join(__dirname, "..", "resources", "loan_agreement.pdf");
+
+    if (!fs.existsSync(pdfPath)) {
+      return res.status(404).json({
+        status: "error",
+        message: "Loan agreement not found"
+      });
+    }
+
+    // Set headers and stream file
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", 'attachment; filename="loan_agreement.pdf"');
+
+    const stream = fs.createReadStream(pdfPath);
+    stream.on("error", (err) => {
+      console.error("Error streaming loan agreement:", err);
+      if (!res.headersSent) {
+        res.status(500).json({ status: "error", message: "Failed to download file" });
+      } else {
+        res.destroy();
+      }
+    });
+    stream.pipe(res);
+  } catch (err) {
+    console.error("downloadLoanAgreement error:", err);
+    res.status(500).json({ status: "error", message: "Failed to download loan agreement" });
+  }
+};
 
 module.exports = {
   getAllLoans,
@@ -556,4 +771,6 @@ module.exports = {
   requestingLoan,
   approvingLoan,
   repaymentLoan,
+  sendLoanApprovalEmail,
+  downloadLoanAgreement, // new export
 };

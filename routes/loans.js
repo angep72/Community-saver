@@ -11,6 +11,8 @@ const {
   requestingLoan,
   approvingLoan,
   repaymentLoan,
+  sendLoanApprovalEmail,
+  downloadLoanAgreement,
 } = require("../controller/loans");
 const router = express.Router();
 
@@ -92,10 +94,11 @@ router.use(protect);
 // @access  Admin (all), Branch Lead (branch), Member (own)
 router.get("/", getAllLoans);
 
-// @route   GET /api/loans/:id
-// @desc    Get loan by ID
-// @access  Admin, Branch Lead (branch), Member (own)
-router.get("/:id", getSingleLoan);
+// CRITICAL: Static routes must come BEFORE dynamic :id routes
+// @route   GET /api/loans/loan-agreement
+// @desc    Download the static loan agreement PDF
+// @access  Protected (all authenticated users)
+router.get("/loan-agreement", downloadLoanAgreement);
 
 /**
  * @swagger
@@ -252,5 +255,46 @@ router.post(
 // @desc    Disburse approved loan
 // @access  Admin
 router.post("/:id/disburse", authorize("admin"), repaymentLoan);
+
+/**
+ * @swagger
+ * /loans/{id}/send-approval-email:
+ *   post:
+ *     summary: Send loan approval email (Admin only)
+ *     tags: [Loans]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Loan ID
+ *     responses:
+ *       200:
+ *         description: Approval email sent successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Success'
+ *       404:
+ *         description: Loan not found
+ */
+
+// @route   POST /api/loans/:id/send-approval-email
+// @desc    Trigger sending the approval email for a loan
+// @access  Admin
+router.post(
+  "/:id/send-approval-email",
+  authorize("admin"),
+  sendLoanApprovalEmail
+);
+
+// @route   GET /api/loans/:id
+// @desc    Get loan by ID
+// @access  Admin, Branch Lead (branch), Member (own)
+// NOTE: This MUST be last among GET routes because it's a catch-all for any ID
+router.get("/:id", getSingleLoan);
 
 module.exports = router;
