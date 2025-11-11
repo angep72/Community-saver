@@ -15,7 +15,8 @@ passport.use(
         // Check if user exists by googleId
         let user = await User.findOne({ googleId: profile.id });
 
-        if (!user) {          // Check if email already exists (user registered normally)
+        if (!user) {
+          // Check if email already exists (user registered normally)
           user = await User.findOne({ email: profile.emails[0].value });
 
           if (user) {
@@ -23,30 +24,10 @@ passport.use(
             user.googleId = profile.id;
             await user.save();
           } else {
-            // Create new user
-            const Branch = require("../models/Branch");
-            const defaultBranch = await Branch.findOne();
-
-            if (!defaultBranch) {
-              console.error("❌ No branch found!");
-              return done(null, false, {
-                message: "User cannot sign in: No branch found. Please contact admin to create your account."
-              });
-            }
-
-            user = await User.create({
-              firstName: profile.name.givenName,
-              lastName: profile.name.familyName,
-              email: profile.emails[0].value,
-              googleId: profile.id,
-              isActive: true,
-              status: "approved", // Auto-approve OAuth users
-              role: "member",
-              branch: defaultBranch._id,
-              password: Math.random().toString(36).slice(-8),
+            // Don't create - tell them to register first
+            return done(null, false, {
+              message: "No account found. Please register first using the normal registration form."
             });
-
-            console.log(" ");
           }
         }
 
