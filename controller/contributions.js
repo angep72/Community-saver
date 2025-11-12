@@ -56,24 +56,22 @@ const Penalty = require("../models/Penalty");
  */
 const getAllContribution = async (req, res) => {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const skip = (page - 1) * limit;
-
+    // pagination removed — return all matching contributions
     let query = {};
 
-    // Role-based filtering
-    if (req.user.role === "member") {
-      query.memberId = req.user._id;
-    } else if (req.user.role === "branch_lead") {
-      query.branch = req.user.branch._id;
+    // If a memberId query param is provided, honor it for all roles (bypass role restrictions)
+    if (req.query.memberId) {
+      query.memberId = req.query.memberId;
+    } else {
+      // Role-based filtering when no memberId is specified
+      if (req.user.role === "member") {
+        query.memberId = req.user._id;
+      } else if (req.user.role === "branch_lead") {
+        query.branch = req.user.branch._id;
+      }
     }
 
     // Additional filters
-    if (req.query.memberId && req.user.role !== "member") {
-      query.memberId = req.query.memberId;
-    }
-
     if (req.query.contributionType) {
       query.contributionType = req.query.contributionType;
     }
@@ -97,9 +95,11 @@ const getAllContribution = async (req, res) => {
     const activeUsers = await User.find({ isActive: true }).select("_id");
     const activeUserIds = activeUsers.map((u) => u._id);
 
-    // Add filter to exclude inactive users' contributions
+    // Add filter to exclude inactive users' contributions only when memberId wasn't explicitly provided
+    // (if memberId was provided it was already set above and should be honored as-is)
     query.memberId = query.memberId ? query.memberId : { $in: activeUserIds };
 
+    // Fetch all matching contributions (no pagination)
     const contributions = await Contribution.find(query)
       .populate({
         path: "memberId",
@@ -108,14 +108,13 @@ const getAllContribution = async (req, res) => {
       })
       .populate("recordedBy", "firstName lastName")
       .populate("branch", "name code")
-      .sort({ contributionDate: -1 })
-      .skip(skip)
-      .limit(limit);
+      .sort({ contributionDate: -1 });
 
     // Remove contributions where memberId is null (inactive user)
     const filteredContributions = contributions.filter((c) => c.memberId);
 
-    const total = await Contribution.countDocuments(query);
+    // total is number of returned contributions
+    const total = filteredContributions.length;
 
     // Calculate totals
     const totalAmount = await Contribution.aggregate([
@@ -127,12 +126,7 @@ const getAllContribution = async (req, res) => {
       status: "success",
       data: {
         contributions: filteredContributions,
-        pagination: {
-          page,
-          limit,
-          total,
-          pages: Math.ceil(total / limit),
-        },
+        total,
         summary: {
           totalAmount: totalAmount[0] ? totalAmount[0].total : 0,
         },

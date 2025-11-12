@@ -11,19 +11,9 @@ sgMail.setApiKey(process.env.SENDGRID_API_KEY);
  * @swagger
  * /api/loans:
  *   get:
- *     summary: Get all loans with filters, pagination, and risk assessment
+ *     summary: Get all loans with filters and risk assessment
  *     tags: [Loans]
  *     parameters:
- *       - in: query
- *         name: page
- *         schema:
- *           type: integer
- *         description: Page number
- *       - in: query
- *         name: limit
- *         schema:
- *           type: integer
- *         description: Number of loans per page
  *       - in: query
  *         name: member
  *         schema:
@@ -54,10 +44,6 @@ sgMail.setApiKey(process.env.SENDGRID_API_KEY);
  */
 const getAllLoans = async (req, res) => {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const skip = (page - 1) * limit;
-
     let query = {};
 
     // Role-based filtering
@@ -87,6 +73,7 @@ const getAllLoans = async (req, res) => {
       }
     }
 
+    // Fetch all matching loans (no pagination)
     const loans = await Loan.find(query)
       .populate({
         path: "member",
@@ -96,14 +83,13 @@ const getAllLoans = async (req, res) => {
       })
       .populate("approvedBy", "firstName lastName")
       .populate("branch", "name code")
-      .sort({ appliedDate: -1 })
-      .skip(skip)
-      .limit(limit);
+      .sort({ appliedDate: -1 });
 
     // Exclude loans with null member (e.g., deleted users)
     const filteredLoans = loans.filter(loan => loan.member !== null);
 
-    const total = await Loan.countDocuments(query);
+    // total is number of returned loans
+    const total = filteredLoans.length;
 
     // Calculate summary
     const summary = await Loan.aggregate([
@@ -131,7 +117,7 @@ const getAllLoans = async (req, res) => {
       },
     ]);
 
-    // Add risk assessment to each loan with debug logs
+    // Add risk assessment to each loan
     const loansWithRisk = filteredLoans.map((loan) => {
       let risk = null;
       if (loan.member && loan.member.totalContributions && loan.amount) {
@@ -140,9 +126,6 @@ const getAllLoans = async (req, res) => {
           (loan.amount / loan.member.totalContributions) * 100
         );
         risk = Number.isFinite(risk) ? Math.round(risk * 100) / 100 : null;
-
-      } else {
-        console.log("Risk could not be calculated for this loan.");
       }
       return {
         ...loan.toObject(),
@@ -154,12 +137,7 @@ const getAllLoans = async (req, res) => {
       status: "success",
       data: {
         loans: loansWithRisk,
-        pagination: {
-          page,
-          limit,
-          total,
-          pages: Math.ceil(total / limit),
-        },
+        total,
         summary: summary[0] || {
           totalAmount: 0,
           totalApproved: 0,
