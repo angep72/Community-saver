@@ -260,7 +260,7 @@ router.post("/:id/disburse", authorize("admin"), repaymentLoan);
  * @swagger
  * /loans/{id}/send-approval-email:
  *   post:
- *     summary: Send loan approval email (Admin only)
+ *     summary: Send loan approval email (Admin and Branch Lead)
  *     tags: [Loans]
  *     security:
  *       - bearerAuth: []
@@ -284,10 +284,10 @@ router.post("/:id/disburse", authorize("admin"), repaymentLoan);
 
 // @route   POST /api/loans/:id/send-approval-email
 // @desc    Trigger sending the approval email for a loan
-// @access  Admin
+// @access  Admin, Branch Lead
 router.post(
   "/:id/send-approval-email",
-  authorize("admin"),
+  authorize("admin", "branch_lead"), // allow branch_lead as well
   sendLoanApprovalEmail
 );
 
