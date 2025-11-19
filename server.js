@@ -150,12 +150,38 @@ app.use(
   })
 );
 
-// Rate limiting
-const limiter = rateLimit({
+// Rate limiting configurations
+// General rate limiter - 500 requests per 15 minutes (~33/min) for normal browsing
+const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 200, // limit each IP to 100 requests per windowMs
+  max: 500,
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  message: "Too many requests from this IP, please try again later.",
 });
-app.use(limiter);
+
+// Auth endpoints - stricter protection (15 requests per 15 minutes)
+// Allows multiple login attempts but prevents brute force
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: "Too many authentication attempts, please try again later.",
+  skipSuccessfulRequests: true, // Don't count successful logins
+});
+
+// Polling endpoints - 60 requests per minute (1 req/second for dashboards)
+const pollingLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: "Too many polling requests, please slow down.",
+});
+
+// Apply general rate limiter globally
+app.use(generalLimiter);
 
 // Body parsing middleware
 app.use(express.json({ limit: "10mb" }));
@@ -166,13 +192,13 @@ if (process.env.NODE_ENV === "development") {
   app.use(morgan("dev"));
 }
 
-// Routes
-app.use("/api/auth", authRoutes);
+// Routes with specific rate limiters
+app.use("/api/auth", authLimiter, authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/contributions", contributionRoutes);
 app.use("/api/loans", loanRoutes);
 app.use("/api/penalties", penaltyRoutes);
-app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/dashboard", pollingLimiter, dashboardRoutes);
 app.use("/api/branches", branchRoutes);
 app.use("/api/reports", reportsRoutes);
 
