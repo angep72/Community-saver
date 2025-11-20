@@ -656,10 +656,6 @@ const sendLoanApprovalEmail = async (req, res) => {
             <td style="padding:8px; border:1px solid #e5e7eb; font-weight:600;">Approved Date</td>
             <td style="padding:8px; border:1px solid #e5e7eb;">${approvedDate}</td>
           </tr>
-          <tr>
-            <td style="padding:8px; border:1px solid #e5e7eb; font-weight:600;">Group</td>
-            <td style="padding:8px; border:1px solid #e5e7eb;">${groupName}</td>
-          </tr>
         </table>
 
         <p style="margin-top: 16px; color:#374151;">
